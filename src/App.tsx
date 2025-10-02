@@ -1,24 +1,36 @@
-import React from 'react';
-import logo from './logo.svg';
+import React, { useState } from 'react';
 import './App.css';
+import PapersList from './components/PapersList';
+import PDFViewer from './components/PDFViewer';
+import { CombinedPaper } from './supabase';
 
 function App() {
+  const [selectedPaper, setSelectedPaper] = useState<CombinedPaper | null>(null);
+
+  const handleSelectPaper = (paper: CombinedPaper) => {
+    setSelectedPaper(paper);
+  };
+
+  const handleClosePaper = () => {
+    setSelectedPaper(null);
+  };
+
   return (
     <div className="App">
       <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
+        <h1>GenAI Papers Viewer</h1>
       </header>
+      
+      <main className="App-main">
+        {selectedPaper ? (
+          <PDFViewer 
+            paper={selectedPaper} 
+            onClose={handleClosePaper}
+          />
+        ) : (
+          <PapersList onSelectPaper={handleSelectPaper} />
+        )}
+      </main>
     </div>
   );
 }

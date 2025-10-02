@@ -1,0 +1,28 @@
+{
+  "name": "papers-viewer-api",
+  "version": "1.0.0",
+  "description": "Backend API for Papers Viewer - serves as proxy for Google Sheets data",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "api",
+    "papers",
+    "proxy",
+    "google-sheets"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0"
+  }
+}
