@@ -41,35 +41,29 @@ USING (true);
 -- ============================================================================
 -- Storage Bucket Policies (for PDF uploads)
 -- ============================================================================
-
--- Enable RLS on storage.objects for the papers bucket
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
--- Policy: Allow public read access to papers bucket
-CREATE POLICY "Allow public read access to papers bucket"
-ON storage.objects
-FOR SELECT
-TO public
-USING (bucket_id = 'papers');
-
--- Policy: Allow authenticated users to upload to papers bucket
-CREATE POLICY "Allow authenticated users to upload to papers bucket"
-ON storage.objects
-FOR INSERT
-TO authenticated
-WITH CHECK (bucket_id = 'papers');
-
--- Policy: Allow authenticated users to update files in papers bucket
-CREATE POLICY "Allow authenticated users to update papers bucket"
-ON storage.objects
-FOR UPDATE
-TO authenticated
-USING (bucket_id = 'papers')
-WITH CHECK (bucket_id = 'papers');
-
--- Policy: Allow authenticated users to delete from papers bucket
-CREATE POLICY "Allow authenticated users to delete from papers bucket"
-ON storage.objects
-FOR DELETE
-TO authenticated
-USING (bucket_id = 'papers');
+-- NOTE: Storage policies must be created manually via Supabase Dashboard
+-- Go to: Storage > papers bucket > Policies
+--
+-- Create these policies:
+--
+-- 1. "Allow public read access to papers bucket"
+--    Policy for: SELECT
+--    Target roles: public
+--    USING expression: bucket_id = 'papers'
+--
+-- 2. "Allow authenticated users to upload to papers bucket"
+--    Policy for: INSERT
+--    Target roles: authenticated
+--    WITH CHECK expression: bucket_id = 'papers'
+--
+-- 3. "Allow authenticated users to update papers bucket"
+--    Policy for: UPDATE
+--    Target roles: authenticated
+--    USING expression: bucket_id = 'papers'
+--    WITH CHECK expression: bucket_id = 'papers'
+--
+-- 4. "Allow authenticated users to delete from papers bucket"
+--    Policy for: DELETE
+--    Target roles: authenticated
+--    USING expression: bucket_id = 'papers'
+-- ============================================================================
