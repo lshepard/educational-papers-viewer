@@ -44,7 +44,6 @@ Your `.env` file should contain:
 ```
 REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
 REACT_APP_SUPABASE_ANON_KEY=your_key_here
-REACT_APP_API_URL=http://localhost:3001
 ```
 
 ## Available Scripts

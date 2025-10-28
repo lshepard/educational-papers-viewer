@@ -88,22 +88,55 @@ const PaperUploadEdit: React.FC<PaperUploadEditProps> = ({ paper, onSuccess, onC
     setSuccessMessage(null)
 
     try {
+      // Fetch the PDF from the URL
+      const response = await fetch(pdfUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
+
+      // Verify it's a PDF
+      if (blob.type !== 'application/pdf' && !pdfUrl.toLowerCase().endsWith('.pdf')) {
+        throw new Error('The URL does not appear to be a PDF file')
+      }
+
+      // Generate filename from paper ID or title
+      const timestamp = Date.now()
+      const sanitizedTitle = paper.title?.replace(/[^a-z0-9]/gi, '-').toLowerCase() || 'paper'
+      const filename = `${sanitizedTitle}-${timestamp}.pdf`
+      const filePath = filename
+
+      // Upload to Supabase storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('papers')
+        .upload(filePath, blob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: 'application/pdf'
+        })
+
+      if (uploadError) throw uploadError
+
+      // Update the database record
       const { error: updateError } = await supabase
         .from('genai_papers')
         .update({
-          paper_url: pdfUrl,
-          file_kind: 'pdf'
+          storage_bucket: 'papers',
+          storage_path: uploadData.path,
+          file_kind: 'pdf',
+          paper_url: pdfUrl  // Keep the original URL as reference
         })
         .eq('id', paper.id)
 
       if (updateError) throw updateError
 
-      setSuccessMessage('PDF URL updated successfully!')
+      setSuccessMessage('PDF fetched and uploaded successfully!')
       setTimeout(() => {
         onSuccess()
       }, 1500)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update URL')
+      setError(err instanceof Error ? err.message : 'Failed to fetch and upload PDF')
     } finally {
       setUploading(false)
     }
@@ -145,7 +178,8 @@ const PaperUploadEdit: React.FC<PaperUploadEditProps> = ({ paper, onSuccess, onC
 
         {/* Update PDF URL Section */}
         <div className="url-section">
-          <h4>Option 2: Update PDF URL</h4>
+          <h4>Option 2: Fetch PDF from URL</h4>
+          <p className="url-description">Enter a URL and we'll download and store the PDF</p>
           <input
             type="url"
             value={pdfUrl}
@@ -159,7 +193,7 @@ const PaperUploadEdit: React.FC<PaperUploadEditProps> = ({ paper, onSuccess, onC
             disabled={!pdfUrl.trim() || uploading}
             className="update-url-btn"
           >
-            {uploading ? 'Updating...' : 'Update URL'}
+            {uploading ? 'Fetching & Uploading...' : 'Fetch & Store PDF'}
           </button>
         </div>
 

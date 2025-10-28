@@ -173,12 +173,32 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
             <span className="page-count">Markdown</span>
           )}
         </div>
+        {user && !showUploadEdit && (
+          <button
+            onClick={() => setShowUploadEdit(true)}
+            className="change-pdf-btn"
+          >
+            Change PDF
+          </button>
+        )}
       </div>
 
+      {/* Upload/Edit form when admin wants to change PDF */}
+      {showUploadEdit && user && (
+        <div className="pdf-main-content">
+          <PaperUploadEdit
+            paper={paper}
+            onSuccess={handleUploadSuccess}
+            onCancel={() => setShowUploadEdit(false)}
+          />
+        </div>
+      )}
+
       {/* Main content with sidebar and PDF */}
-      <div className="pdf-main-content">
-        {/* Left sidebar with paper details */}
-        <div className="pdf-sidebar">
+      {!showUploadEdit && (
+        <div className="pdf-main-content">
+          {/* Left sidebar with paper details */}
+          <div className="pdf-sidebar">
           <div className="paper-metadata">
             <h2 className="paper-title">{paper.title || 'Untitled Paper'}</h2>
             
@@ -261,6 +281,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }

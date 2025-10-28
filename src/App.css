@@ -356,6 +356,22 @@ body {
   background-color: #2980b9;
 }
 
+.change-pdf-btn {
+  background-color: #f39c12;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background-color 0.2s;
+  font-weight: 500;
+}
+
+.change-pdf-btn:hover {
+  background-color: #e67e22;
+}
+
 .pdf-info {
   color: #666;
   font-size: 0.9rem;
@@ -1063,6 +1079,13 @@ body {
   margin: 0;
   color: #495057;
   font-size: 1.1rem;
+}
+
+.url-description {
+  margin: -0.5rem 0 0 0;
+  font-size: 0.85rem;
+  color: #6c757d;
+  font-style: italic;
 }
 
 .file-input,
