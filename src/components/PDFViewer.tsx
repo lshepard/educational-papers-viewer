@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import { GenaiPaper, supabase } from '../supabase'
+import { useAuth } from '../contexts/AuthContext'
+import PaperUploadEdit from './PaperUploadEdit'
 
 // Set up the worker for react-pdf - use matching version from unpkg
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
@@ -19,6 +21,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [error, setError] = useState<string | null>(null)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [markdownContent, setMarkdownContent] = useState<string | null>(null)
+  const [showUploadEdit, setShowUploadEdit] = useState<boolean>(false)
+  const { user } = useAuth()
 
   React.useEffect(() => {
     loadContent()
@@ -105,6 +109,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     )
   }
 
+  const handleUploadSuccess = () => {
+    setShowUploadEdit(false)
+    setError(null)
+    // Reload the content
+    loadContent()
+  }
+
   if (error) {
     return (
       <div className="pdf-viewer">
@@ -113,6 +124,26 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           <h2>Error</h2>
         </div>
         <div className="error">{error}</div>
+
+        {user && !showUploadEdit && (
+          <div className="admin-action-container">
+            <button
+              onClick={() => setShowUploadEdit(true)}
+              className="fix-pdf-btn"
+            >
+              Upload PDF or Fix URL
+            </button>
+          </div>
+        )}
+
+        {showUploadEdit && user && (
+          <PaperUploadEdit
+            paper={paper}
+            onSuccess={handleUploadSuccess}
+            onCancel={() => setShowUploadEdit(false)}
+          />
+        )}
+
         <div className="paper-info">
           <h3>Paper Information</h3>
           <p><strong>Title:</strong> {paper.title || 'Untitled'}</p>

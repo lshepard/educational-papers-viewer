@@ -21,12 +21,67 @@ body {
   padding: 1rem 2rem;
   color: white;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .App-header h1 {
   margin: 0;
   font-size: 1.8rem;
   font-weight: 300;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.admin-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.admin-badge {
+  background-color: #f39c12;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.sign-out-btn {
+  background-color: transparent;
+  color: white;
+  border: 1px solid white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.sign-out-btn:hover {
+  background-color: white;
+  color: #2c3e50;
+}
+
+.admin-link {
+  color: white;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border: 1px solid white;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.admin-link:hover {
+  background-color: white;
+  color: #2c3e50;
 }
 
 .App-main {
@@ -799,4 +854,290 @@ body {
   .markdown-content h3 {
     font-size: 1.1rem;
   }
+}
+
+/* Admin Login Styles */
+.admin-login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem;
+}
+
+.admin-login-box {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  padding: 3rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.admin-login-box h1 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.8rem;
+}
+
+.admin-login-subtitle {
+  margin: 0 0 2rem 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.admin-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+.form-group input {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.error-message {
+  background-color: #fee;
+  color: #c33;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  border: 1px solid #fcc;
+}
+
+.success-message {
+  background-color: #efe;
+  color: #2a7;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  border: 1px solid #cfc;
+}
+
+.admin-login-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 0.875rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.admin-login-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.admin-login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.back-to-home-btn {
+  background: transparent;
+  color: #666;
+  border: 1px solid #ddd;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-top: 1rem;
+  width: 100%;
+  transition: all 0.2s;
+}
+
+.back-to-home-btn:hover {
+  background-color: #f8f9fa;
+  border-color: #999;
+}
+
+/* Admin Action Container */
+.admin-action-container {
+  text-align: center;
+  padding: 2rem;
+}
+
+.fix-pdf-btn {
+  background-color: #f39c12;
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.fix-pdf-btn:hover {
+  background-color: #e67e22;
+}
+
+/* Paper Upload/Edit Styles */
+.paper-upload-edit {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  margin: 2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.upload-edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.upload-edit-header h3 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.5rem;
+}
+
+.close-upload-btn {
+  background: transparent;
+  border: none;
+  font-size: 2rem;
+  color: #999;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.close-upload-btn:hover {
+  background-color: #f8f9fa;
+  color: #333;
+}
+
+.upload-edit-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.upload-section,
+.url-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.upload-section h4,
+.url-section h4 {
+  margin: 0;
+  color: #495057;
+  font-size: 1.1rem;
+}
+
+.file-input,
+.url-input {
+  padding: 0.75rem;
+  border: 2px dashed #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.url-input {
+  border-style: solid;
+}
+
+.file-input:focus,
+.url-input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.file-selected {
+  color: #2a7;
+  font-size: 0.9rem;
+  margin: 0;
+  padding: 0.5rem;
+  background-color: #efe;
+  border-radius: 4px;
+}
+
+.upload-btn,
+.update-url-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 0.875rem 1.5rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.upload-btn:hover:not(:disabled),
+.update-url-btn:hover:not(:disabled) {
+  background-color: #2980b9;
+}
+
+.upload-btn:disabled,
+.update-url-btn:disabled {
+  background-color: #bdc3c7;
+  cursor: not-allowed;
+}
+
+.divider {
+  text-align: center;
+  position: relative;
+  margin: 1rem 0;
+}
+
+.divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: #e9ecef;
+}
+
+.divider span {
+  background-color: white;
+  padding: 0 1rem;
+  position: relative;
+  color: #999;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
