@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
+import ReactMarkdown from 'react-markdown'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import { GenaiPaper, supabase } from '../supabase'
@@ -17,12 +18,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [markdownContent, setMarkdownContent] = useState<string | null>(null)
 
   React.useEffect(() => {
-    loadPDF()
+    loadContent()
   }, [paper])
 
-  const loadPDF = async () => {
+  const loadContent = async () => {
     setLoading(true)
     setError(null)
 
@@ -35,11 +37,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           if (cleanPath.startsWith(`${paper.storage_bucket}/`)) {
             cleanPath = cleanPath.substring(`${paper.storage_bucket}/`.length)
           }
-          
+
           const { data } = await supabase.storage
             .from(paper.storage_bucket)
             .getPublicUrl(cleanPath)
-          
+
           if (data?.publicUrl) {
             setPdfUrl(data.publicUrl)
           } else {
@@ -49,11 +51,18 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           // Use the paper URL directly
           setPdfUrl(paper.paper_url || paper.source_url)
         }
+      } else if (paper.file_kind === 'markdown') {
+        // Load markdown content from database
+        if (paper.markdown) {
+          setMarkdownContent(paper.markdown)
+        } else {
+          setError('No markdown content available for this paper')
+        }
       } else {
-        setError('This paper is not a PDF file')
+        setError(`Unsupported file type: ${paper.file_kind}`)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load PDF')
+      setError(err instanceof Error ? err.message : 'Failed to load content')
     } finally {
       setLoading(false)
     }
@@ -90,7 +99,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
       <div className="pdf-viewer">
         <div className="pdf-header">
           <button onClick={onClose} className="close-btn">← Back</button>
-          <h2>Loading PDF...</h2>
+          <h2>Loading {paper.file_kind === 'markdown' ? 'content' : 'PDF'}...</h2>
         </div>
       </div>
     )
@@ -126,8 +135,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
       <div className="pdf-header">
         <button onClick={onClose} className="close-btn">← Back to Papers</button>
         <div className="pdf-info">
-          {numPages > 0 && (
+          {paper.file_kind === 'pdf' && numPages > 0 && (
             <span className="page-count">{numPages} pages</span>
+          )}
+          {paper.file_kind === 'markdown' && (
+            <span className="page-count">Markdown</span>
           )}
         </div>
       </div>
@@ -196,9 +208,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           </div>
         </div>
 
-        {/* Right side PDF viewer */}
+        {/* Right side content viewer */}
         <div className="pdf-content-area">
-          {pdfUrl && (
+          {paper.file_kind === 'pdf' && pdfUrl && (
             <Document
               file={pdfUrl}
               onLoadSuccess={onDocumentLoadSuccess}
@@ -209,6 +221,12 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
                 {renderAllPages()}
               </div>
             </Document>
+          )}
+
+          {paper.file_kind === 'markdown' && markdownContent && (
+            <div className="markdown-content">
+              <ReactMarkdown>{markdownContent}</ReactMarkdown>
+            </div>
           )}
         </div>
       </div>

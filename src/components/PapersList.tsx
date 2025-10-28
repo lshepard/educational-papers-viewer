@@ -147,9 +147,9 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
                   <button
                     onClick={() => onSelectPaper(paper)}
                     className="view-btn"
-                    disabled={!paper.file_kind || paper.file_kind !== 'pdf'}
+                    disabled={!paper.file_kind || (paper.file_kind !== 'pdf' && paper.file_kind !== 'markdown')}
                   >
-                    {paper.file_kind === 'pdf' ? 'View PDF' : 'View'}
+                    {paper.file_kind === 'pdf' ? 'View PDF' : paper.file_kind === 'markdown' ? 'View Markdown' : 'View'}
                   </button>
                   <a
                     href={paper.source_url}
