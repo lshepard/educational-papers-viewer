@@ -6,52 +6,22 @@ const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY!
 export interface GenaiPaper {
   id: string
   source_url: string
-  paper_url: string
+  paper_url: string | null
   file_kind: 'pdf' | 'html' | 'markdown' | 'other'
   storage_bucket: string | null
   storage_path: string | null
   created_at: string
   markdown: string | null
-  title?: string
-  authors?: string
-  month?: string
-  year?: number
-  venue?: string
-  application?: string
-  users?: string
-  ages?: string
-  why?: string
-  study_design?: string
-}
-
-export interface SheetsPaper {
-  id: string
-  title: string
-  url: string
-  authors: string
-  month: number
-  year: number
-  venue: string
-  application: string
-  users: string
-  ages: string
-  why: string
-  study_design: string
-  page: string
-  scraped_at: string
-  request_id: string
-  markdown: string
-  error: string
-  result: string
-}
-
-export interface CombinedPaper extends SheetsPaper {
-  storage_bucket?: string | null
-  storage_path?: string | null
-  file_kind?: 'pdf' | 'html' | 'markdown' | 'other'
-  source_url?: string
-  paper_url?: string
-  created_at?: string
+  title: string | null
+  authors: string | null
+  month: number | null
+  year: number | null
+  venue: string | null
+  application: string | null
+  users: string | null
+  ages: string | null
+  why: string | null
+  study_design: string | null
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey)

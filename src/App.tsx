@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import './App.css';
 import PapersList from './components/PapersList';
 import PDFViewer from './components/PDFViewer';
-import { CombinedPaper } from './supabase';
+import { GenaiPaper } from './supabase';
 
 function App() {
-  const [selectedPaper, setSelectedPaper] = useState<CombinedPaper | null>(null);
+  const [selectedPaper, setSelectedPaper] = useState<GenaiPaper | null>(null);
 
-  const handleSelectPaper = (paper: CombinedPaper) => {
+  const handleSelectPaper = (paper: GenaiPaper) => {
     setSelectedPaper(paper);
   };
 

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { CombinedPaper } from '../supabase'
+import { GenaiPaper } from '../supabase'
 import { PapersService } from '../services/papersService'
 
 interface PapersListProps {
-  onSelectPaper: (paper: CombinedPaper) => void
+  onSelectPaper: (paper: GenaiPaper) => void
 }
 
 const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
-  const [papers, setPapers] = useState<CombinedPaper[]>([])
-  const [filteredPapers, setFilteredPapers] = useState<CombinedPaper[]>([])
+  const [papers, setPapers] = useState<GenaiPaper[]>([])
+  const [filteredPapers, setFilteredPapers] = useState<GenaiPaper[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -25,7 +25,7 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
 
   const fetchPapers = async () => {
     try {
-      const data = await PapersService.getCombinedPapers()
+      const data = await PapersService.getAllPapers()
       setPapers(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch papers')
@@ -39,11 +39,11 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
 
     if (searchTerm) {
       filtered = filtered.filter(paper =>
-        paper.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.authors.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.venue.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.application.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (paper.url && paper.url.toLowerCase().includes(searchTerm.toLowerCase()))
+        (paper.title && paper.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (paper.authors && paper.authors.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (paper.venue && paper.venue.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (paper.application && paper.application.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (paper.source_url && paper.source_url.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
 
@@ -52,7 +52,7 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
     }
 
     if (yearFilter) {
-      filtered = filtered.filter(paper => 
+      filtered = filtered.filter(paper =>
         paper.year && paper.year.toString() === yearFilter
       )
     }
@@ -144,16 +144,16 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
                   </span>
                 </td>
                 <td className="paper-actions">
-                  <button 
+                  <button
                     onClick={() => onSelectPaper(paper)}
                     className="view-btn"
                     disabled={!paper.file_kind || paper.file_kind !== 'pdf'}
                   >
                     {paper.file_kind === 'pdf' ? 'View PDF' : 'View'}
                   </button>
-                  <a 
-                    href={paper.url} 
-                    target="_blank" 
+                  <a
+                    href={paper.source_url}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="external-link"
                   >

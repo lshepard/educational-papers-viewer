@@ -1,3 +1,6 @@
+// THIS SERVER IS NO LONGER NEEDED - APP NOW USES SUPABASE DIRECTLY
+// Keeping for reference only
+
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');

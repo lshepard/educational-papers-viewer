@@ -2,13 +2,13 @@ import React, { useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { CombinedPaper, supabase } from '../supabase'
+import { GenaiPaper, supabase } from '../supabase'
 
 // Set up the worker for react-pdf - use matching version from unpkg
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 interface PDFViewerProps {
-  paper: CombinedPaper
+  paper: GenaiPaper
   onClose: () => void
 }
 
@@ -43,11 +43,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           if (data?.publicUrl) {
             setPdfUrl(data.publicUrl)
           } else {
-            setPdfUrl(paper.url)
+            setPdfUrl(paper.paper_url || paper.source_url)
           }
         } else {
           // Use the paper URL directly
-          setPdfUrl(paper.url)
+          setPdfUrl(paper.paper_url || paper.source_url)
         }
       } else {
         setError('This paper is not a PDF file')
@@ -107,7 +107,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
         <div className="paper-info">
           <h3>Paper Information</h3>
           <p><strong>Title:</strong> {paper.title || 'Untitled'}</p>
-          <p><strong>URL:</strong> <a href={paper.url} target="_blank" rel="noopener noreferrer">{paper.url}</a></p>
+          <p><strong>URL:</strong> <a href={paper.source_url} target="_blank" rel="noopener noreferrer">{paper.source_url}</a></p>
           <p><strong>File Type:</strong> {paper.file_kind || 'other'}</p>
           <p><strong>Authors:</strong> {paper.authors || 'Unknown'}</p>
           <p><strong>Year:</strong> {paper.year || 'Unknown'}</p>
@@ -188,7 +188,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
             <div className="metadata-section">
               <h3>Links</h3>
               <p>
-                <a href={paper.url} target="_blank" rel="noopener noreferrer" className="external-link">
+                <a href={paper.source_url} target="_blank" rel="noopener noreferrer" className="external-link">
                   View Original Source
                 </a>
               </p>
