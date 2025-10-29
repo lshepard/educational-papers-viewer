@@ -1,10 +1,10 @@
-import { supabase, GenaiPaper } from '../supabase'
+import { supabase, Paper } from '../supabase'
 
 export class PapersService {
-  static async getAllPapers(): Promise<GenaiPaper[]> {
+  static async getAllPapers(): Promise<Paper[]> {
     try {
       const { data, error } = await supabase
-        .from('genai_papers')
+        .from('papers')
         .select('*')
         .order('created_at', { ascending: false })
 

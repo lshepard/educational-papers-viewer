@@ -56,7 +56,7 @@ const PaperUploadEdit: React.FC<PaperUploadEditProps> = ({ paper, onSuccess, onC
 
       // Update the database record
       const { error: updateError } = await supabase
-        .from('genai_papers')
+        .from('papers')
         .update({
           storage_bucket: 'papers',
           storage_path: uploadData.path,
@@ -120,7 +120,7 @@ const PaperUploadEdit: React.FC<PaperUploadEditProps> = ({ paper, onSuccess, onC
 
       // Update the database record
       const { error: updateError } = await supabase
-        .from('genai_papers')
+        .from('papers')
         .update({
           storage_bucket: 'papers',
           storage_path: uploadData.path,

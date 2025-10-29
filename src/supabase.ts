@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL!
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY!
 
-export interface GenaiPaper {
+export interface Paper {
   id: string
   source_url: string
   paper_url: string | null
@@ -22,6 +22,14 @@ export interface GenaiPaper {
   ages: string | null
   why: string | null
   study_design: string | null
+  source_type?: 'manual' | 'n8n_workflow' | 'google_scholar' | 'arxiv' | 'semantic_scholar' | 'news' | 'agent_discovery'
+  source_metadata?: Record<string, any>
+  processed_at?: string | null
+  processing_status?: 'pending' | 'processing' | 'completed' | 'failed'
+  processing_error?: string | null
 }
+
+// Legacy alias for backward compatibility
+export type GenaiPaper = Paper
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
