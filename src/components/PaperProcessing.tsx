@@ -37,21 +37,13 @@ const PaperProcessing: React.FC = () => {
     setMessage(null)
 
     try {
-      // Get the Supabase URL from environment
-      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
-      const functionUrl = `${supabaseUrl}/functions/v1/extract-paper-content`
+      // Call local Python backend instead of Edge Function
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
+      const extractUrl = `${backendUrl}/extract`
 
-      // Get the current session token
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!session) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(functionUrl, {
+      const response = await fetch(extractUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ paper_id: paperId }),
@@ -60,7 +52,7 @@ const PaperProcessing: React.FC = () => {
       const result = await response.json()
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Extraction failed')
+        throw new Error(result.error || result.detail || 'Extraction failed')
       }
 
       setMessage({
