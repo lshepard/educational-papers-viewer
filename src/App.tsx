@@ -4,6 +4,7 @@ import './App.css';
 import PapersList from './components/PapersList';
 import PDFViewer from './components/PDFViewer';
 import AdminLogin from './components/AdminLogin';
+import PaperProcessing from './components/PaperProcessing';
 import { GenaiPaper } from './supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -27,6 +28,9 @@ function MainApp() {
           {user ? (
             <div className="admin-controls">
               <span className="admin-badge">Admin</span>
+              <Link to="/admin/processing" className="admin-link">
+                Processing
+              </Link>
               <button onClick={signOut} className="sign-out-btn">
                 Sign Out
               </button>
@@ -60,6 +64,7 @@ function App() {
         <Routes>
           <Route path="/" element={<MainApp />} />
           <Route path="/admin" element={<AdminLogin />} />
+          <Route path="/admin/processing" element={<PaperProcessing />} />
         </Routes>
       </Router>
     </AuthProvider>
