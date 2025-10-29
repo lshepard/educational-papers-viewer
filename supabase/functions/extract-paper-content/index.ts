@@ -30,6 +30,9 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Parse request body outside try/catch so we can access paper_id in error handler
+  let paper_id: string | undefined
+
   try {
     // Get environment variables
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -40,7 +43,8 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Parse request
-    const { paper_id }: ExtractionRequest = await req.json()
+    const requestBody: ExtractionRequest = await req.json()
+    paper_id = requestBody.paper_id
 
     if (!paper_id) {
       throw new Error('paper_id is required')
@@ -68,17 +72,19 @@ Deno.serve(async (req) => {
     // Get PDF content
     let pdfUrl: string
     if (paper.storage_bucket && paper.storage_path) {
-      // Get from Supabase storage
-      const { data: urlData } = await supabase.storage
+      // Get public URL from Supabase storage (bucket has public read access)
+      const { data: urlData } = supabase.storage
         .from(paper.storage_bucket)
-        .createSignedUrl(paper.storage_path, 3600) // 1 hour
+        .getPublicUrl(paper.storage_path)
 
-      if (!urlData?.signedUrl) {
-        throw new Error('Failed to get signed URL for PDF')
+      if (!urlData?.publicUrl) {
+        throw new Error('Failed to get public URL for PDF')
       }
-      pdfUrl = urlData.signedUrl
+      pdfUrl = urlData.publicUrl
+      console.log(`Using storage URL: ${pdfUrl}`)
     } else if (paper.paper_url) {
       pdfUrl = paper.paper_url
+      console.log(`Using external URL: ${pdfUrl}`)
     } else {
       throw new Error('No PDF URL or storage path available')
     }
@@ -237,14 +243,13 @@ If you cannot identify a clear section type, use "other" with an appropriate sec
   } catch (error) {
     console.error('Extraction error:', error)
 
-    // Try to update paper status to failed
-    try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    // Try to update paper status to failed (paper_id was parsed earlier)
+    if (paper_id) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+        const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-      const { paper_id } = await req.json()
-      if (paper_id) {
         await supabase
           .from('papers')
           .update({
@@ -252,9 +257,9 @@ If you cannot identify a clear section type, use "other" with an appropriate sec
             processing_error: error.message,
           })
           .eq('id', paper_id)
+      } catch (e) {
+        console.error('Failed to update error status:', e)
       }
-    } catch (e) {
-      console.error('Failed to update error status:', e)
     }
 
     return new Response(
