@@ -1,6 +1,6 @@
 # Extract Paper Content Edge Function
 
-This Supabase Edge Function extracts sections and images from academic papers using Google's Gemini AI.
+This Supabase Edge Function extracts sections and images from academic papers using Google's Gemini 2.5 Pro AI model.
 
 ## Features
 

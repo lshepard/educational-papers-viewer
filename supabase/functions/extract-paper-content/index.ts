@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
 
     // Initialize Gemini
     const genAI = new GoogleGenerativeAI(geminiApiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
     // Create extraction prompt
     const prompt = `
