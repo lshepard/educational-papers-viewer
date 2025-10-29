@@ -104,10 +104,39 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch PDF: ${pdfResponse.statusText}`)
     }
 
-    const pdfBuffer = await pdfResponse.arrayBuffer()
-    const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)))
+    const pdfBlob = await pdfResponse.blob()
+    console.log(`PDF downloaded, size: ${pdfBlob.size} bytes`)
 
-    console.log(`PDF downloaded, size: ${pdfBuffer.byteLength} bytes`)
+    // Upload PDF to Google Files API
+    console.log('Uploading PDF to Google Files API...')
+    const uploadUrl = 'https://generativelanguage.googleapis.com/upload/v1beta/files?key=' + geminiApiKey
+
+    const formData = new FormData()
+    formData.append('file', pdfBlob, 'paper.pdf')
+
+    // Create metadata
+    const metadata = {
+      file: {
+        display_name: paper.title || 'Research Paper',
+      }
+    }
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Protocol': 'multipart',
+      },
+      body: formData,
+    })
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text()
+      throw new Error(`Failed to upload to Google Files: ${uploadResponse.statusText} - ${errorText}`)
+    }
+
+    const uploadResult = await uploadResponse.json()
+    const fileUri = uploadResult.file.uri
+    console.log(`File uploaded: ${fileUri}`)
 
     // Initialize Gemini
     const genAI = new GoogleGenerativeAI(geminiApiKey)
@@ -157,13 +186,13 @@ If you cannot identify a clear section type, use "other" with an appropriate sec
 
     console.log('Sending to Gemini for analysis...')
 
-    // Call Gemini with PDF
+    // Call Gemini with uploaded file
     const result = await model.generateContent([
       prompt,
       {
-        inlineData: {
+        fileData: {
           mimeType: 'application/pdf',
-          data: pdfBase64,
+          fileUri: fileUri,
         },
       },
     ])
