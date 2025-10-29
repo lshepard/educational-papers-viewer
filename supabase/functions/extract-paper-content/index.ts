@@ -73,15 +73,22 @@ Deno.serve(async (req) => {
     let pdfUrl: string
     if (paper.storage_bucket && paper.storage_path) {
       // Get public URL from Supabase storage (bucket has public read access)
+      // Strip bucket name prefix if it exists in the path (e.g., 'papers/file.pdf' -> 'file.pdf')
+      let cleanPath = paper.storage_path
+      const bucketPrefix = `${paper.storage_bucket}/`
+      if (cleanPath.startsWith(bucketPrefix)) {
+        cleanPath = cleanPath.substring(bucketPrefix.length)
+      }
+
       const { data: urlData } = supabase.storage
         .from(paper.storage_bucket)
-        .getPublicUrl(paper.storage_path)
+        .getPublicUrl(cleanPath)
 
       if (!urlData?.publicUrl) {
         throw new Error('Failed to get public URL for PDF')
       }
       pdfUrl = urlData.publicUrl
-      console.log(`Using storage URL: ${pdfUrl}`)
+      console.log(`Using storage URL: ${pdfUrl} (path: ${cleanPath})`)
     } else if (paper.paper_url) {
       pdfUrl = paper.paper_url
       console.log(`Using external URL: ${pdfUrl}`)
