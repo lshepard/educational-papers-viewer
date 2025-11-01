@@ -38,6 +38,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [images, setImages] = useState<PaperImage[]>([])
   const [imagesLoading, setImagesLoading] = useState<boolean>(false)
   const [activeTab, setActiveTab] = useState<ViewTab>('content')
+  const [extracting, setExtracting] = useState<boolean>(false)
+  const [extractionMessage, setExtractionMessage] = useState<string | null>(null)
   const { user } = useAuth()
 
   React.useEffect(() => {
@@ -114,6 +116,42 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     const bucket = paper.storage_bucket || 'papers'
     const { data } = supabase.storage.from(bucket).getPublicUrl(image.storage_path)
     return data.publicUrl
+  }
+
+  const handleExtractContent = async () => {
+    setExtracting(true)
+    setExtractionMessage(null)
+
+    try {
+      const response = await fetch('http://localhost:8000/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          paper_id: paper.id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Extraction failed')
+      }
+
+      const result = await response.json()
+      setExtractionMessage(`✓ Extracted ${result.sections_count} sections and ${result.images_count} images`)
+
+      // Reload images after extraction
+      await loadImages()
+
+      // Switch to images tab if images were extracted
+      if (result.images_count > 0) {
+        setActiveTab('images')
+      }
+    } catch (err) {
+      setExtractionMessage(`✗ Extraction failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setExtracting(false)
+    }
   }
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
@@ -216,14 +254,28 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
           {paper.file_kind === 'markdown' && (
             <span className="page-count">Markdown</span>
           )}
+          {extractionMessage && (
+            <span className={`extraction-message ${extractionMessage.startsWith('✓') ? 'success' : 'error'}`}>
+              {extractionMessage}
+            </span>
+          )}
         </div>
         {user && !showUploadEdit && (
-          <button
-            onClick={() => setShowUploadEdit(true)}
-            className="change-pdf-btn"
-          >
-            Change PDF
-          </button>
+          <div className="header-actions">
+            <button
+              onClick={handleExtractContent}
+              className="extract-content-btn"
+              disabled={extracting}
+            >
+              {extracting ? 'Extracting...' : 'Extract Content'}
+            </button>
+            <button
+              onClick={() => setShowUploadEdit(true)}
+              className="change-pdf-btn"
+            >
+              Change PDF
+            </button>
+          </div>
         )}
       </div>
 

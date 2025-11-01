@@ -356,6 +356,34 @@ body {
   background-color: #2980b9;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.extract-content-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background-color 0.2s;
+  font-weight: 500;
+}
+
+.extract-content-btn:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.extract-content-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .change-pdf-btn {
   background-color: #f39c12;
   color: white;
@@ -372,7 +400,28 @@ body {
   background-color: #e67e22;
 }
 
+.extraction-message {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-left: 1rem;
+}
+
+.extraction-message.success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+}
+
+.extraction-message.error {
+  background-color: #f8d7da;
+  color: #842029;
+}
+
 .pdf-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   color: #666;
   font-size: 0.9rem;
 }
