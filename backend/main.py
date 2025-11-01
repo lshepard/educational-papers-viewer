@@ -84,47 +84,40 @@ class ExtractionResponse(BaseModel):
 
 class PaperSections(BaseModel):
     """Structured output model for extracted paper sections."""
-    abstract: Optional[str] = None
-    introduction: Optional[str] = None
-    methods: Optional[str] = None
-    results: Optional[str] = None
-    discussion: Optional[str] = None
-    conclusion: Optional[str] = None
-    other: Optional[str] = None
+    abstract: Optional[str]
+    introduction: Optional[str]
+    methods: Optional[str]
+    results: Optional[str]
+    discussion: Optional[str]
+    conclusion: Optional[str]
+    other: Optional[str]
+
+
+class SearchRequest(BaseModel):
+    """Request model for full-text search."""
+    query: str
+    limit: int = 10
+
+
+class SearchResult(BaseModel):
+    """Individual search result."""
+    id: str
+    paper_id: str
+    section_type: str
+    section_title: Optional[str]
+    content: str
+    created_at: str
+
+
+class SearchResponse(BaseModel):
+    """Response model for full-text search."""
+    success: bool
+    query: str
+    results: List[SearchResult]
+    count: int
 
 
 
-def clean_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Remove unsupported fields from JSON schema for Gemini API.
-    
-    Gemini Schema proto doesn't support: title, anyOf, oneOf, allOf, definitions, $defs
-    
-    Args:
-        schema: The JSON schema dictionary
-        
-    Returns:
-        A cleaned schema dictionary compatible with Gemini Schema proto
-    """
-    if not isinstance(schema, dict):
-        return schema
-    
-    # Fields not supported by Gemini Schema proto
-    unsupported_fields = {"title", "anyOf", "oneOf", "allOf", "definitions", "$defs", "default"}
-    
-    # Create a copy to avoid modifying the original, excluding unsupported fields
-    cleaned = {k: v for k, v in schema.items() if k not in unsupported_fields}
-    
-    # Recursively clean nested schemas
-    if "properties" in cleaned and isinstance(cleaned["properties"], dict):
-        cleaned["properties"] = {
-            k: clean_schema_for_gemini(v) for k, v in cleaned["properties"].items()
-        }
-    
-    if "items" in cleaned:
-        cleaned["items"] = clean_schema_for_gemini(cleaned["items"])
-    
-    return cleaned
 
 
 def save_error_response(response_text: str, error_type: str, error: Exception) -> str:
@@ -244,6 +237,7 @@ async def root():
         "version": "0.1.0",
         "endpoints": {
             "/extract": "POST - Extract content from paper",
+            "/search": "POST - Full-text search across paper sections",
             "/health": "GET - Health check"
         }
     }
@@ -274,6 +268,66 @@ async def health_check():
                 "error": str(e)
             }
         )
+
+
+@app.post("/search", response_model=SearchResponse)
+async def search_papers(request: SearchRequest):
+    """
+    Full-text search across paper sections using PostgreSQL's tsvector.
+
+    This endpoint searches the `fts` column which contains indexed text from
+    both section_title and content fields.
+
+    Query examples:
+    - "machine learning" - searches for both words (AND)
+    - "neural | network" - searches for either word (OR)
+    - "deep & learning" - explicit AND
+    - "transformer & !attention" - excludes documents with "attention"
+
+    Args:
+        request: SearchRequest with query string and optional limit
+
+    Returns:
+        SearchResponse with matching sections ordered by relevance
+    """
+    try:
+        logger.info(f"Searching for: {request.query}")
+
+        # Use Supabase's textSearch method on the fts column
+        # The query is processed using websearch_to_tsquery which supports:
+        # - Plain text (converted to AND queries)
+        # - "quoted phrases"
+        # - word1 OR word2
+        # - -excluded
+        response = supabase.table("paper_sections") \
+            .select("id, paper_id, section_type, section_title, content, created_at") \
+            .text_search("fts", request.query) \
+            .limit(request.limit) \
+            .execute()
+
+        results = []
+        for section in response.data:
+            results.append(SearchResult(
+                id=section["id"],
+                paper_id=section["paper_id"],
+                section_type=section["section_type"],
+                section_title=section.get("section_title"),
+                content=section["content"],
+                created_at=section["created_at"]
+            ))
+
+        logger.info(f"Found {len(results)} results for query: {request.query}")
+
+        return SearchResponse(
+            success=True,
+            query=request.query,
+            results=results,
+            count=len(results)
+        )
+
+    except Exception as e:
+        logger.error(f"Search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/extract", response_model=ExtractionResponse)
