@@ -80,7 +80,6 @@ class ExtractionResponse(BaseModel):
     success: bool
     paper_id: str
     sections_count: int
-    images_count: int
 
 
 class PaperSections(BaseModel):
@@ -94,12 +93,38 @@ class PaperSections(BaseModel):
     other: Optional[str] = None
 
 
-class PaperImage(BaseModel):
-    """Structured output model for a single paper image/figure."""
-    image_type: str  # screenshot, chart, figure, diagram, table, other
-    caption: Optional[str] = None
-    description: Optional[str] = None
-    page_number: Optional[int] = None
+
+def clean_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Remove unsupported fields from JSON schema for Gemini API.
+    
+    Gemini Schema proto doesn't support: title, anyOf, oneOf, allOf, definitions, $defs
+    
+    Args:
+        schema: The JSON schema dictionary
+        
+    Returns:
+        A cleaned schema dictionary compatible with Gemini Schema proto
+    """
+    if not isinstance(schema, dict):
+        return schema
+    
+    # Fields not supported by Gemini Schema proto
+    unsupported_fields = {"title", "anyOf", "oneOf", "allOf", "definitions", "$defs", "default"}
+    
+    # Create a copy to avoid modifying the original, excluding unsupported fields
+    cleaned = {k: v for k, v in schema.items() if k not in unsupported_fields}
+    
+    # Recursively clean nested schemas
+    if "properties" in cleaned and isinstance(cleaned["properties"], dict):
+        cleaned["properties"] = {
+            k: clean_schema_for_gemini(v) for k, v in cleaned["properties"].items()
+        }
+    
+    if "items" in cleaned:
+        cleaned["items"] = clean_schema_for_gemini(cleaned["items"])
+    
+    return cleaned
 
 
 def save_error_response(response_text: str, error_type: str, error: Exception) -> str:
@@ -170,7 +195,7 @@ Include the COMPLETE text content for each section. For Methods, extract every d
         model_name="gemini-2.5-pro",
         generation_config={
             "response_mime_type": "application/json",
-            "response_schema": PaperSections.model_json_schema(),
+            "response_schema": PaperSections
         },
     )
     
@@ -208,66 +233,6 @@ Include the COMPLETE text content for each section. For Methods, extract every d
     
     logger.info(f"Extracted {len(sections)} sections from structured output")
     return sections
-
-
-def extract_paper_images(gemini_file) -> list[Dict[str, Any]]:
-    """
-    Extract images and figures from a research paper PDF using Gemini structured output.
-    
-    Args:
-        gemini_file: The Gemini file object representing the uploaded PDF
-        
-    Returns:
-        A list of image dictionaries with image_type, caption, description, and page_number
-    """
-    logger.info("Extracting paper images with structured output...")
-    
-    images_prompt = """
-Identify and describe ALL images, figures, charts, diagrams, screenshots, and tables in this research paper PDF.
-
-For each visual element:
-- image_type: choose from screenshot, chart, figure, diagram, table, other
-- caption: extract the exact caption if present
-- description: describe what the image shows in detail
-- page_number: the page it appears on (if identifiable)
-
-Be thorough - identify EVERY visual element in the paper.
-"""
-    
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-pro",
-        generation_config={
-            "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "array",
-                "items": PaperImage.model_json_schema(),
-            },
-        },
-    )
-    
-    response = model.generate_content([gemini_file, images_prompt])
-    
-    # Parse the structured response
-    try:
-        images_data = json.loads(response.text)
-    except json.JSONDecodeError as e:
-        error_file = save_error_response(response.text, "images", e)
-        raise ValueError(f"Failed to parse JSON from Gemini images response: {e}. Full response saved to: {error_file}")
-    
-    images = [PaperImage(**img) for img in images_data]
-    
-    # Convert to the format expected by the rest of the code
-    images_list = []
-    for img in images:
-        images_list.append({
-            "image_type": img.image_type,
-            "caption": img.caption,
-            "description": img.description,
-            "page_number": img.page_number
-        })
-    
-    logger.info(f"Extracted {len(images_list)} images from structured output")
-    return images_list
 
 
 @app.get("/")
@@ -314,13 +279,13 @@ async def health_check():
 @app.post("/extract", response_model=ExtractionResponse)
 async def extract_paper_content(request: ExtractionRequest):
     """
-    Extract sections and images from a research paper using Gemini AI.
+    Extract sections from a research paper using Gemini AI.
 
     This endpoint:
     1. Fetches the paper from Supabase
     2. Downloads the PDF
     3. Uploads to Gemini Files API
-    4. Runs two extraction passes (sections + images)
+    4. Runs two extraction passes (sections)
     5. Stores results in Supabase
     """
     paper_id = request.paper_id
@@ -384,12 +349,6 @@ async def extract_paper_content(request: ExtractionRequest):
 
         logger.info(f"Extracted {len(sections)} sections")
 
-        # ========== EXTRACTION 2: Images and Figures ==========
-        logger.info("Extracting images and figures...")
-        images = extract_paper_images(gemini_file)
-
-        logger.info(f"Extracted {len(images)} images")
-
         # ========== Store in Supabase ==========
         # Store sections
         if sections:
@@ -405,21 +364,6 @@ async def extract_paper_content(request: ExtractionRequest):
             supabase.table("paper_sections").insert(sections_to_insert).execute()
             logger.info(f"Stored {len(sections)} sections in database")
 
-        # Store images
-        if images:
-            images_to_insert = [
-                {
-                    "paper_id": paper_id,
-                    "image_type": image["image_type"],
-                    "caption": image.get("caption"),
-                    "description": image.get("description"),
-                    "page_number": image.get("page_number")
-                }
-                for image in images
-            ]
-            supabase.table("paper_images").insert(images_to_insert).execute()
-            logger.info(f"Stored {len(images)} images in database")
-
         # Update paper status
         supabase.table("papers").update({
             "processing_status": "completed",
@@ -431,8 +375,7 @@ async def extract_paper_content(request: ExtractionRequest):
         return ExtractionResponse(
             success=True,
             paper_id=paper_id,
-            sections_count=len(sections),
-            images_count=len(images)
+            sections_count=len(sections)
         )
 
     except json.JSONDecodeError as e:
