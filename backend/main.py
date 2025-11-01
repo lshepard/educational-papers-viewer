@@ -301,8 +301,8 @@ async def search_papers(request: SearchRequest):
         # - -excluded
         response = supabase.table("paper_sections") \
             .select("id, paper_id, section_type, section_title, content, created_at") \
-            .text_search("fts", request.query) \
             .limit(request.limit) \
+            .text_search("fts", request.query) \
             .execute()
 
         results = []

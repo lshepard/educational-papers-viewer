@@ -2,14 +2,18 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 import PapersList from './components/PapersList';
+import SearchView from './components/SearchView';
 import PDFViewer from './components/PDFViewer';
 import AdminLogin from './components/AdminLogin';
 import PaperProcessing from './components/PaperProcessing';
 import { GenaiPaper } from './supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
+type ViewMode = 'browse' | 'search';
+
 function MainApp() {
   const [selectedPaper, setSelectedPaper] = useState<GenaiPaper | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('browse');
   const { user, signOut } = useAuth();
 
   const handleSelectPaper = (paper: GenaiPaper) => {
@@ -43,14 +47,33 @@ function MainApp() {
         </div>
       </header>
 
+      {!selectedPaper && (
+        <nav className="view-tabs">
+          <button
+            className={`tab-button ${viewMode === 'browse' ? 'active' : ''}`}
+            onClick={() => setViewMode('browse')}
+          >
+            Browse Papers
+          </button>
+          <button
+            className={`tab-button ${viewMode === 'search' ? 'active' : ''}`}
+            onClick={() => setViewMode('search')}
+          >
+            Search Content
+          </button>
+        </nav>
+      )}
+
       <main className="App-main">
         {selectedPaper ? (
           <PDFViewer
             paper={selectedPaper}
             onClose={handleClosePaper}
           />
-        ) : (
+        ) : viewMode === 'browse' ? (
           <PapersList onSelectPaper={handleSelectPaper} />
+        ) : (
+          <SearchView onSelectPaper={handleSelectPaper} />
         )}
       </main>
     </div>
