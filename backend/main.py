@@ -672,10 +672,15 @@ async def extract_paper_content(request: ExtractionRequest):
                 )
 
                 if storage_path:
+                    # Determine image type based on source
+                    # 'embedded' = raster image (PNG/JPG) embedded in PDF
+                    # 'vector' = rendered figure/chart/table (originally vector graphics)
+                    image_type = 'vector' if img.get('source') == 'rendered' else 'embedded'
+
                     images_stored.append({
                         "paper_id": paper_id,
                         "page_number": img['page_num'],
-                        "image_type": "extracted",  # Simple type for now
+                        "image_type": image_type,
                         "storage_path": storage_path,
                         "width": img['width'],
                         "height": img['height']

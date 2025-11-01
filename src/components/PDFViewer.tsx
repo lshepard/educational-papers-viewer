@@ -26,6 +26,8 @@ interface PaperImage {
   created_at: string
 }
 
+type ViewTab = 'content' | 'images';
+
 const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [numPages, setNumPages] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(true)
@@ -35,6 +37,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [showUploadEdit, setShowUploadEdit] = useState<boolean>(false)
   const [images, setImages] = useState<PaperImage[]>([])
   const [imagesLoading, setImagesLoading] = useState<boolean>(false)
+  const [activeTab, setActiveTab] = useState<ViewTab>('content')
   const { user } = useAuth()
 
   React.useEffect(() => {
@@ -298,31 +301,17 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
               </p>
             </div>
 
-            {/* Extracted Images Section */}
+            {/* Image count info */}
             {images.length > 0 && (
               <div className="metadata-section">
-                <h3>Extracted Images ({images.length})</h3>
-                {imagesLoading ? (
-                  <p>Loading images...</p>
-                ) : (
-                  <div className="extracted-images-list">
-                    {images.map((image) => (
-                      <div key={image.id} className="extracted-image-item">
-                        <img
-                          src={getImageUrl(image)}
-                          alt={`Page ${image.page_number || '?'}`}
-                          className="extracted-image-thumbnail"
-                        />
-                        <div className="extracted-image-info">
-                          <span className="image-page">Page {image.page_number || '?'}</span>
-                          {image.width && image.height && (
-                            <span className="image-dimensions">{image.width} × {image.height}</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <h3>Extracted Images</h3>
+                <p>{images.length} images extracted</p>
+                <button
+                  onClick={() => setActiveTab('images')}
+                  className="view-images-btn"
+                >
+                  View All Images
+                </button>
               </div>
             )}
           </div>
@@ -330,22 +319,79 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
 
         {/* Right side content viewer */}
         <div className="pdf-content-area">
-          {paper.file_kind === 'pdf' && pdfUrl && (
-            <Document
-              file={pdfUrl}
-              onLoadSuccess={onDocumentLoadSuccess}
-              onLoadError={onDocumentLoadError}
-              loading={<div className="pdf-loading">Loading PDF...</div>}
+          {/* Tab Navigation */}
+          <div className="content-tabs">
+            <button
+              className={`content-tab-button ${activeTab === 'content' ? 'active' : ''}`}
+              onClick={() => setActiveTab('content')}
             >
-              <div className="pdf-pages-container">
-                {renderAllPages()}
-              </div>
-            </Document>
+              {paper.file_kind === 'pdf' ? 'PDF' : 'Content'}
+            </button>
+            {images.length > 0 && (
+              <button
+                className={`content-tab-button ${activeTab === 'images' ? 'active' : ''}`}
+                onClick={() => setActiveTab('images')}
+              >
+                Images ({images.length})
+              </button>
+            )}
+          </div>
+
+          {/* Content View */}
+          {activeTab === 'content' && (
+            <>
+              {paper.file_kind === 'pdf' && pdfUrl && (
+                <Document
+                  file={pdfUrl}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  onLoadError={onDocumentLoadError}
+                  loading={<div className="pdf-loading">Loading PDF...</div>}
+                >
+                  <div className="pdf-pages-container">
+                    {renderAllPages()}
+                  </div>
+                </Document>
+              )}
+
+              {paper.file_kind === 'markdown' && markdownContent && (
+                <div className="markdown-content">
+                  <ReactMarkdown>{markdownContent}</ReactMarkdown>
+                </div>
+              )}
+            </>
           )}
 
-          {paper.file_kind === 'markdown' && markdownContent && (
-            <div className="markdown-content">
-              <ReactMarkdown>{markdownContent}</ReactMarkdown>
+          {/* Images View */}
+          {activeTab === 'images' && (
+            <div className="images-grid-container">
+              {imagesLoading ? (
+                <div className="loading">Loading images...</div>
+              ) : images.length === 0 ? (
+                <div className="no-results">No images extracted from this paper.</div>
+              ) : (
+                <div className="images-grid">
+                  {images.map((image) => (
+                    <div key={image.id} className="image-card">
+                      <img
+                        src={getImageUrl(image)}
+                        alt={`Page ${image.page_number || '?'}`}
+                        className="image-card-img"
+                      />
+                      <div className="image-card-info">
+                        <div className="image-card-meta">
+                          <span className="image-page-badge">Page {image.page_number || '?'}</span>
+                          <span className={`image-type-badge ${image.image_type}`}>
+                            {image.image_type === 'vector' ? 'Figure/Chart' : 'Embedded'}
+                          </span>
+                        </div>
+                        {image.width && image.height && (
+                          <div className="image-dimensions-text">{image.width} × {image.height}px</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
