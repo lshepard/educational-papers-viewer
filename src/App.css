@@ -1587,3 +1587,49 @@ body {
     gap: 0.25rem;
   }
 }
+
+/* Extracted Images Styles */
+.extracted-images-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.extracted-image-item {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  transition: box-shadow 0.2s;
+}
+
+.extracted-image-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.extracted-image-thumbnail {
+  width: 100%;
+  height: auto;
+  display: block;
+  cursor: pointer;
+}
+
+.extracted-image-info {
+  padding: 0.5rem;
+  background: #f8f9fa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.image-page {
+  font-weight: 600;
+  color: #495057;
+}
+
+.image-dimensions {
+  font-family: monospace;
+}

@@ -8,6 +8,9 @@ import os
 import json
 import logging
 import tempfile
+import io
+import re
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
@@ -19,6 +22,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import google.generativeai as genai
 from supabase import create_client, Client
+import fitz  # PyMuPDF
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
@@ -80,6 +85,7 @@ class ExtractionResponse(BaseModel):
     success: bool
     paper_id: str
     sections_count: int
+    images_count: int
 
 
 class PaperSections(BaseModel):
@@ -155,6 +161,129 @@ def save_error_response(response_text: str, error_type: str, error: Exception) -
         logger.error(f"Error response content (first 1000 chars): {response_text[:1000]}")
     
     return error_file
+
+
+def create_paper_slug(title: str) -> str:
+    """
+    Create a URL-friendly slug from paper title.
+
+    Args:
+        title: Paper title
+
+    Returns:
+        Slug like "problem-solving-teaching-problem-solving-aligning-llms"
+    """
+    # Convert to lowercase and replace spaces/special chars with hyphens
+    slug = re.sub(r'[^\w\s-]', '', title.lower())
+    slug = re.sub(r'[-\s]+', '-', slug)
+    # Limit length
+    slug = slug[:80].strip('-')
+    return slug
+
+
+def extract_images_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
+    """
+    Extract all embedded images from a PDF using PyMuPDF.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Returns:
+        List of dicts with: {
+            'page_num': int,
+            'image_index': int,
+            'image_bytes': bytes,
+            'ext': str (png/jpg),
+            'width': int,
+            'height': int
+        }
+    """
+    logger.info(f"Extracting images from PDF: {pdf_path}")
+    images = []
+
+    try:
+        doc = fitz.open(pdf_path)
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            image_list = page.get_images(full=True)
+
+            for img_index, img in enumerate(image_list):
+                xref = img[0]  # Image XREF number
+
+                try:
+                    # Extract image
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+
+                    # Get image dimensions
+                    img_obj = Image.open(io.BytesIO(image_bytes))
+                    width, height = img_obj.size
+
+                    # Skip very small images (likely logos, icons)
+                    if width < 100 or height < 100:
+                        logger.debug(f"Skipping small image: {width}x{height}")
+                        continue
+
+                    images.append({
+                        'page_num': page_num + 1,  # 1-indexed
+                        'image_index': img_index + 1,
+                        'image_bytes': image_bytes,
+                        'ext': image_ext,
+                        'width': width,
+                        'height': height
+                    })
+
+                    logger.info(f"Extracted image: page {page_num + 1}, index {img_index + 1}, size {width}x{height}, format {image_ext}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to extract image {img_index} from page {page_num}: {e}")
+                    continue
+
+        doc.close()
+        logger.info(f"Extracted {len(images)} images from PDF")
+        return images
+
+    except Exception as e:
+        logger.error(f"Failed to extract images from PDF: {e}")
+        return []
+
+
+def upload_image_to_storage(
+    image_bytes: bytes,
+    paper_slug: str,
+    filename: str,
+    bucket: str = "papers"
+) -> Optional[str]:
+    """
+    Upload an image to Supabase storage.
+
+    Args:
+        image_bytes: Image data
+        paper_slug: Paper slug for organizing images
+        filename: Filename (e.g., "page-1-image-1.png")
+        bucket: Supabase storage bucket name
+
+    Returns:
+        Storage path if successful, None otherwise
+    """
+    storage_path = f"images/{paper_slug}/{filename}"
+
+    try:
+        # Upload to Supabase storage
+        supabase.storage.from_(bucket).upload(
+            path=storage_path,
+            file=image_bytes,
+            file_options={"content-type": f"image/{filename.split('.')[-1]}"}
+        )
+
+        logger.info(f"Uploaded image to storage: {storage_path}")
+        return storage_path
+
+    except Exception as e:
+        logger.error(f"Failed to upload image to storage: {e}")
+        return None
 
 
 def extract_paper_sections(gemini_file) -> list[Dict[str, Any]]:
@@ -397,11 +526,46 @@ async def extract_paper_content(request: ExtractionRequest):
         gemini_file = genai.upload_file(temp_file_path)
         logger.info(f"File uploaded to Gemini: {gemini_file.name}")
 
-        # ========== EXTRACTION 1: Text Sections ==========
-        logger.info("Extracting text sections...")
-        sections = extract_paper_sections(gemini_file)
+        # ========== PARALLEL EXTRACTION ==========
+        logger.info("Starting parallel extraction: text sections and images...")
 
-        logger.info(f"Extracted {len(sections)} sections")
+        # Run both extractions in parallel using asyncio.gather
+        sections_task = asyncio.to_thread(extract_paper_sections, gemini_file)
+        images_task = asyncio.to_thread(extract_images_from_pdf, temp_file_path)
+
+        sections, images = await asyncio.gather(sections_task, images_task)
+
+        logger.info(f"Parallel extraction complete: {len(sections)} sections, {len(images)} images")
+
+        # Create paper slug for organizing images
+        paper_title = paper.get("title", paper_id)
+        paper_slug = create_paper_slug(paper_title)
+
+        # Upload images and store metadata
+        images_stored = []
+        if images:
+            for img in images:
+                filename = f"page-{img['page_num']}-image-{img['image_index']}.{img['ext']}"
+
+                # Upload to Supabase storage
+                storage_path = upload_image_to_storage(
+                    image_bytes=img['image_bytes'],
+                    paper_slug=paper_slug,
+                    filename=filename,
+                    bucket=paper.get("storage_bucket", "papers")
+                )
+
+                if storage_path:
+                    images_stored.append({
+                        "paper_id": paper_id,
+                        "page_number": img['page_num'],
+                        "image_type": "extracted",  # Simple type for now
+                        "storage_path": storage_path,
+                        "width": img['width'],
+                        "height": img['height']
+                    })
+
+            logger.info(f"Uploaded {len(images_stored)} images to storage")
 
         # ========== Store in Supabase ==========
         # Store sections
@@ -418,6 +582,11 @@ async def extract_paper_content(request: ExtractionRequest):
             supabase.table("paper_sections").insert(sections_to_insert).execute()
             logger.info(f"Stored {len(sections)} sections in database")
 
+        # Store images
+        if images_stored:
+            supabase.table("paper_images").insert(images_stored).execute()
+            logger.info(f"Stored {len(images_stored)} image records in database")
+
         # Update paper status
         supabase.table("papers").update({
             "processing_status": "completed",
@@ -429,7 +598,8 @@ async def extract_paper_content(request: ExtractionRequest):
         return ExtractionResponse(
             success=True,
             paper_id=paper_id,
-            sections_count=len(sections)
+            sections_count=len(sections),
+            images_count=len(images_stored)
         )
 
     except json.JSONDecodeError as e:

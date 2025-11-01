@@ -15,6 +15,17 @@ interface PDFViewerProps {
   onClose: () => void
 }
 
+interface PaperImage {
+  id: string
+  paper_id: string
+  page_number: number | null
+  image_type: string
+  storage_path: string
+  width: number | null
+  height: number | null
+  created_at: string
+}
+
 const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [numPages, setNumPages] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(true)
@@ -22,10 +33,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [markdownContent, setMarkdownContent] = useState<string | null>(null)
   const [showUploadEdit, setShowUploadEdit] = useState<boolean>(false)
+  const [images, setImages] = useState<PaperImage[]>([])
+  const [imagesLoading, setImagesLoading] = useState<boolean>(false)
   const { user } = useAuth()
 
   React.useEffect(() => {
     loadContent()
+    loadImages()
   }, [paper])
 
   const loadContent = async () => {
@@ -70,6 +84,33 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const loadImages = async () => {
+    setImagesLoading(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('paper_images')
+        .select('*')
+        .eq('paper_id', paper.id)
+        .order('page_number', { ascending: true })
+
+      if (error) throw error
+
+      setImages(data || [])
+    } catch (err) {
+      console.error('Failed to load images:', err)
+      // Don't set error state, just fail silently for images
+    } finally {
+      setImagesLoading(false)
+    }
+  }
+
+  const getImageUrl = (image: PaperImage): string => {
+    const bucket = paper.storage_bucket || 'papers'
+    const { data } = supabase.storage.from(bucket).getPublicUrl(image.storage_path)
+    return data.publicUrl
   }
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
@@ -256,6 +297,34 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
                 </a>
               </p>
             </div>
+
+            {/* Extracted Images Section */}
+            {images.length > 0 && (
+              <div className="metadata-section">
+                <h3>Extracted Images ({images.length})</h3>
+                {imagesLoading ? (
+                  <p>Loading images...</p>
+                ) : (
+                  <div className="extracted-images-list">
+                    {images.map((image) => (
+                      <div key={image.id} className="extracted-image-item">
+                        <img
+                          src={getImageUrl(image)}
+                          alt={`Page ${image.page_number || '?'}`}
+                          className="extracted-image-thumbnail"
+                        />
+                        <div className="extracted-image-info">
+                          <span className="image-page">Page {image.page_number || '?'}</span>
+                          {image.width && image.height && (
+                            <span className="image-dimensions">{image.width} × {image.height}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
