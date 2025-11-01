@@ -387,19 +387,32 @@ def upload_image_to_storage(
     storage_path = f"images/{paper_slug}/{filename}"
 
     try:
-        # Upload to Supabase storage
+        # Try to upload with upsert (overwrite if exists)
         supabase.storage.from_(bucket).upload(
             path=storage_path,
             file=image_bytes,
-            file_options={"content-type": f"image/{filename.split('.')[-1]}"}
+            file_options={
+                "content-type": f"image/{filename.split('.')[-1]}",
+                "upsert": "true"
+            }
         )
 
         logger.info(f"Uploaded image to storage: {storage_path}")
         return storage_path
 
     except Exception as e:
-        logger.error(f"Failed to upload image to storage: {e}")
-        return None
+        # If it still fails, try to update instead
+        try:
+            supabase.storage.from_(bucket).update(
+                path=storage_path,
+                file=image_bytes,
+                file_options={"content-type": f"image/{filename.split('.')[-1]}"}
+            )
+            logger.info(f"Updated existing image in storage: {storage_path}")
+            return storage_path
+        except Exception as update_error:
+            logger.error(f"Failed to upload/update image to storage: {e}, {update_error}")
+            return None
 
 
 def extract_paper_sections(gemini_file) -> list[Dict[str, Any]]:
@@ -689,8 +702,11 @@ async def extract_paper_content(request: ExtractionRequest):
             logger.info(f"Uploaded {len(images_stored)} images to storage")
 
         # ========== Store in Supabase ==========
-        # Store sections
+        # Store sections (delete existing first to avoid duplicates)
         if sections:
+            # Delete existing sections for this paper
+            supabase.table("paper_sections").delete().eq("paper_id", paper_id).execute()
+
             sections_to_insert = [
                 {
                     "paper_id": paper_id,
@@ -703,8 +719,11 @@ async def extract_paper_content(request: ExtractionRequest):
             supabase.table("paper_sections").insert(sections_to_insert).execute()
             logger.info(f"Stored {len(sections)} sections in database")
 
-        # Store images
+        # Store images (delete existing first to avoid duplicates)
         if images_stored:
+            # Delete existing images for this paper
+            supabase.table("paper_images").delete().eq("paper_id", paper_id).execute()
+
             supabase.table("paper_images").insert(images_stored).execute()
             logger.info(f"Stored {len(images_stored)} image records in database")
 
