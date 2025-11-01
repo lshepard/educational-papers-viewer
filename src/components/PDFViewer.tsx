@@ -227,6 +227,26 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
         )}
       </div>
 
+      {/* Tab Navigation */}
+      {!showUploadEdit && (
+        <div className="viewer-tabs">
+          <button
+            className={`viewer-tab-button ${activeTab === 'content' ? 'active' : ''}`}
+            onClick={() => setActiveTab('content')}
+          >
+            {paper.file_kind === 'pdf' ? 'PDF' : 'Content'}
+          </button>
+          {images.length > 0 && (
+            <button
+              className={`viewer-tab-button ${activeTab === 'images' ? 'active' : ''}`}
+              onClick={() => setActiveTab('images')}
+            >
+              Images ({images.length})
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Upload/Edit form when admin wants to change PDF */}
       {showUploadEdit && user && (
         <div className="pdf-main-content">
@@ -318,51 +338,32 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
         </div>
 
         {/* Right side content viewer */}
-        <div className="pdf-content-area">
-          {/* Tab Navigation */}
-          <div className="content-tabs">
-            <button
-              className={`content-tab-button ${activeTab === 'content' ? 'active' : ''}`}
-              onClick={() => setActiveTab('content')}
-            >
-              {paper.file_kind === 'pdf' ? 'PDF' : 'Content'}
-            </button>
-            {images.length > 0 && (
-              <button
-                className={`content-tab-button ${activeTab === 'images' ? 'active' : ''}`}
-                onClick={() => setActiveTab('images')}
+        {activeTab === 'content' && (
+          <div className="pdf-content-area">
+            {paper.file_kind === 'pdf' && pdfUrl && (
+              <Document
+                file={pdfUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
+                loading={<div className="pdf-loading">Loading PDF...</div>}
               >
-                Images ({images.length})
-              </button>
+                <div className="pdf-pages-container">
+                  {renderAllPages()}
+                </div>
+              </Document>
+            )}
+
+            {paper.file_kind === 'markdown' && markdownContent && (
+              <div className="markdown-content">
+                <ReactMarkdown>{markdownContent}</ReactMarkdown>
+              </div>
             )}
           </div>
+        )}
 
-          {/* Content View */}
-          {activeTab === 'content' && (
-            <>
-              {paper.file_kind === 'pdf' && pdfUrl && (
-                <Document
-                  file={pdfUrl}
-                  onLoadSuccess={onDocumentLoadSuccess}
-                  onLoadError={onDocumentLoadError}
-                  loading={<div className="pdf-loading">Loading PDF...</div>}
-                >
-                  <div className="pdf-pages-container">
-                    {renderAllPages()}
-                  </div>
-                </Document>
-              )}
-
-              {paper.file_kind === 'markdown' && markdownContent && (
-                <div className="markdown-content">
-                  <ReactMarkdown>{markdownContent}</ReactMarkdown>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Images View */}
-          {activeTab === 'images' && (
+        {/* Images View */}
+        {activeTab === 'images' && (
+          <div className="images-full-view">
             <div className="images-grid-container">
               {imagesLoading ? (
                 <div className="loading">Loading images...</div>
@@ -393,8 +394,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
       )}
     </div>
