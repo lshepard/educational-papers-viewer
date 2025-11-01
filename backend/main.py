@@ -181,9 +181,104 @@ def create_paper_slug(title: str) -> str:
     return slug
 
 
+def extract_figure_regions_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
+    """
+    Extract figure/table regions from PDF by detecting captions and rendering those areas.
+    This captures vector graphics (charts, graphs) that aren't embedded as images.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Returns:
+        List of dicts with rendered figure images
+    """
+    logger.info(f"Extracting figure regions from PDF: {pdf_path}")
+    figures = []
+
+    try:
+        doc = fitz.open(pdf_path)
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+
+            # Find figure/table captions
+            text_dict = page.get_text("dict")
+            captions = []
+
+            for block in text_dict["blocks"]:
+                if "lines" not in block:
+                    continue
+
+                for line in block["lines"]:
+                    text = " ".join([span["text"] for span in line["spans"]])
+                    # Look for figure/table captions
+                    if any(keyword in text for keyword in ["Figure ", "Table ", "Fig. "]):
+                        captions.append({
+                            'text': text,
+                            'bbox': block['bbox']
+                        })
+
+            # For each caption, render a region around it
+            for cap_idx, caption in enumerate(captions):
+                try:
+                    # Expand the bounding box to capture the figure
+                    # Typical figures are 200-400px tall
+                    bbox = caption['bbox']
+                    x0, y0, x1, y1 = bbox
+
+                    # Expand region (adjust as needed)
+                    figure_bbox = fitz.Rect(
+                        max(0, x0 - 20),
+                        max(0, y0 - 250),  # Look above caption
+                        min(page.rect.width, x1 + 20),
+                        min(page.rect.height, y1 + 20)
+                    )
+
+                    # Render this region at high DPI
+                    mat = fitz.Matrix(2, 2)  # 2x zoom = ~144 DPI
+                    pix = page.get_pixmap(matrix=mat, clip=figure_bbox)
+
+                    # Convert to PNG bytes
+                    image_bytes = pix.tobytes("png")
+
+                    # Get dimensions
+                    width, height = pix.width, pix.height
+
+                    # Skip if too small
+                    if width < 100 or height < 100:
+                        continue
+
+                    figures.append({
+                        'page_num': page_num + 1,
+                        'image_index': cap_idx + 1,
+                        'image_bytes': image_bytes,
+                        'ext': 'png',
+                        'width': width,
+                        'height': height,
+                        'caption': caption['text'][:100]  # First 100 chars
+                    })
+
+                    logger.info(f"Rendered figure: page {page_num + 1}, caption: {caption['text'][:50]}..., size {width}x{height}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to render figure region on page {page_num}: {e}")
+                    continue
+
+        doc.close()
+        logger.info(f"Extracted {len(figures)} figure regions from PDF")
+        return figures
+
+    except Exception as e:
+        logger.error(f"Failed to extract figure regions from PDF: {e}")
+        return []
+
+
 def extract_images_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     """
-    Extract all embedded images from a PDF using PyMuPDF.
+    Extract all images from a PDF using PyMuPDF.
+    This includes both:
+    1. Embedded raster images (PNG/JPG)
+    2. Rendered figure/table regions (vector graphics)
 
     Args:
         pdf_path: Path to the PDF file
@@ -195,7 +290,8 @@ def extract_images_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
             'image_bytes': bytes,
             'ext': str (png/jpg),
             'width': int,
-            'height': int
+            'height': int,
+            'caption': str (optional, for rendered figures)
         }
     """
     logger.info(f"Extracting images from PDF: {pdf_path}")
@@ -204,6 +300,7 @@ def extract_images_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     try:
         doc = fitz.open(pdf_path)
 
+        # Method 1: Extract embedded images
         for page_num in range(len(doc)):
             page = doc[page_num]
             image_list = page.get_images(full=True)
@@ -223,7 +320,7 @@ def extract_images_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
 
                     # Skip very small images (likely logos, icons)
                     if width < 100 or height < 100:
-                        logger.debug(f"Skipping small image: {width}x{height}")
+                        logger.debug(f"Skipping small embedded image: {width}x{height}")
                         continue
 
                     images.append({
@@ -232,17 +329,36 @@ def extract_images_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
                         'image_bytes': image_bytes,
                         'ext': image_ext,
                         'width': width,
-                        'height': height
+                        'height': height,
+                        'source': 'embedded'
                     })
 
-                    logger.info(f"Extracted image: page {page_num + 1}, index {img_index + 1}, size {width}x{height}, format {image_ext}")
+                    logger.info(f"Extracted embedded image: page {page_num + 1}, index {img_index + 1}, size {width}x{height}, format {image_ext}")
 
                 except Exception as e:
-                    logger.warning(f"Failed to extract image {img_index} from page {page_num}: {e}")
+                    logger.warning(f"Failed to extract embedded image {img_index} from page {page_num}: {e}")
                     continue
 
         doc.close()
-        logger.info(f"Extracted {len(images)} images from PDF")
+
+        # Method 2: Render figure regions (for vector graphics)
+        figure_images = extract_figure_regions_from_pdf(pdf_path)
+
+        # Merge both methods
+        # Re-index the figure images
+        next_index = {}
+        for img in images:
+            page = img['page_num']
+            next_index[page] = max(next_index.get(page, 0), img['image_index'])
+
+        for fig in figure_images:
+            page = fig['page_num']
+            fig['image_index'] = next_index.get(page, 0) + 1
+            next_index[page] = fig['image_index']
+            fig['source'] = 'rendered'
+            images.append(fig)
+
+        logger.info(f"Extracted {len(images)} total images from PDF (embedded + rendered)")
         return images
 
     except Exception as e:
