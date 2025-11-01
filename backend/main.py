@@ -8,7 +8,8 @@ import os
 import json
 import logging
 import tempfile
-from typing import Dict, Any
+from datetime import datetime
+from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -80,6 +81,193 @@ class ExtractionResponse(BaseModel):
     paper_id: str
     sections_count: int
     images_count: int
+
+
+class PaperSections(BaseModel):
+    """Structured output model for extracted paper sections."""
+    abstract: Optional[str] = None
+    introduction: Optional[str] = None
+    methods: Optional[str] = None
+    results: Optional[str] = None
+    discussion: Optional[str] = None
+    conclusion: Optional[str] = None
+    other: Optional[str] = None
+
+
+class PaperImage(BaseModel):
+    """Structured output model for a single paper image/figure."""
+    image_type: str  # screenshot, chart, figure, diagram, table, other
+    caption: Optional[str] = None
+    description: Optional[str] = None
+    page_number: Optional[int] = None
+
+
+def save_error_response(response_text: str, error_type: str, error: Exception) -> str:
+    """
+    Save error response to a file and log it.
+    
+    Args:
+        response_text: The raw response text that failed to parse
+        error_type: Type of error (e.g., 'sections', 'images')
+        error: The exception that occurred
+        
+    Returns:
+        Path to the saved error file
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    error_dir = "error_responses"
+    os.makedirs(error_dir, exist_ok=True)
+    
+    error_file = os.path.join(error_dir, f"{error_type}_error_{timestamp}.txt")
+    
+    try:
+        with open(error_file, "w", encoding="utf-8") as f:
+            f.write(f"Error Type: {error_type}\n")
+            f.write(f"Error: {str(error)}\n")
+            f.write(f"Timestamp: {timestamp}\n")
+            f.write("=" * 80 + "\n")
+            f.write("RAW RESPONSE:\n")
+            f.write("=" * 80 + "\n")
+            f.write(response_text)
+        
+        logger.error(f"Saved error response to: {error_file}")
+        logger.error(f"Error response content (first 1000 chars): {response_text[:1000]}")
+    except Exception as save_error:
+        logger.error(f"Failed to save error response to file: {save_error}")
+        logger.error(f"Error response content (first 1000 chars): {response_text[:1000]}")
+    
+    return error_file
+
+
+def extract_paper_sections(gemini_file) -> list[Dict[str, Any]]:
+    """
+    Extract sections from a research paper PDF using Gemini structured output.
+    
+    Args:
+        gemini_file: The Gemini file object representing the uploaded PDF
+        
+    Returns:
+        A list of section dictionaries with section_type, section_title, and content
+    """
+    logger.info("Extracting paper sections with structured output...")
+    
+    sections_prompt = """
+Extract all text sections from this research paper PDF.
+
+Extract these sections if present:
+- Abstract
+- Introduction  
+- Methods/Methodology - BE VERY DETAILED HERE, extract every detail about the methodology
+- Results
+- Discussion
+- Conclusion
+- Any other sections (captured in the 'other' field)
+
+Include the COMPLETE text content for each section. For Methods, extract every detail about the methodology.
+"""
+    
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-pro",
+        generation_config={
+            "response_mime_type": "application/json",
+            "response_schema": PaperSections.model_json_schema(),
+        },
+    )
+    
+    response = model.generate_content([gemini_file, sections_prompt])
+    
+    # Parse the structured response
+    try:
+        sections_data = json.loads(response.text)
+    except Exception as e:
+        error_file = save_error_response(response.text, "sections", e)
+        raise ValueError(f"Failed to parse JSON from Gemini sections response: {e}. Full response saved to: {error_file}")
+    
+    paper_sections = PaperSections(**sections_data)
+    
+    # Convert to the format expected by the rest of the code
+    sections = []
+    section_mapping = {
+        "abstract": ("abstract", "Abstract"),
+        "introduction": ("introduction", "Introduction"),
+        "methods": ("methods", "Methods"),
+        "results": ("results", "Results"),
+        "discussion": ("discussion", "Discussion"),
+        "conclusion": ("conclusion", "Conclusion"),
+        "other": ("other", "Other"),
+    }
+    
+    for field_name, (section_type, section_title) in section_mapping.items():
+        content = getattr(paper_sections, field_name)
+        if content:
+            sections.append({
+                "section_type": section_type,
+                "section_title": section_title,
+                "content": content
+            })
+    
+    logger.info(f"Extracted {len(sections)} sections from structured output")
+    return sections
+
+
+def extract_paper_images(gemini_file) -> list[Dict[str, Any]]:
+    """
+    Extract images and figures from a research paper PDF using Gemini structured output.
+    
+    Args:
+        gemini_file: The Gemini file object representing the uploaded PDF
+        
+    Returns:
+        A list of image dictionaries with image_type, caption, description, and page_number
+    """
+    logger.info("Extracting paper images with structured output...")
+    
+    images_prompt = """
+Identify and describe ALL images, figures, charts, diagrams, screenshots, and tables in this research paper PDF.
+
+For each visual element:
+- image_type: choose from screenshot, chart, figure, diagram, table, other
+- caption: extract the exact caption if present
+- description: describe what the image shows in detail
+- page_number: the page it appears on (if identifiable)
+
+Be thorough - identify EVERY visual element in the paper.
+"""
+    
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-pro",
+        generation_config={
+            "response_mime_type": "application/json",
+            "response_schema": {
+                "type": "array",
+                "items": PaperImage.model_json_schema(),
+            },
+        },
+    )
+    
+    response = model.generate_content([gemini_file, images_prompt])
+    
+    # Parse the structured response
+    try:
+        images_data = json.loads(response.text)
+    except json.JSONDecodeError as e:
+        error_file = save_error_response(response.text, "images", e)
+        raise ValueError(f"Failed to parse JSON from Gemini images response: {e}. Full response saved to: {error_file}")
+    
+    images = [PaperImage(**img) for img in images_data]
+    
+    # Convert to the format expected by the rest of the code
+    images_list = []
+    for img in images:
+        images_list.append({
+            "image_type": img.image_type,
+            "caption": img.caption,
+            "description": img.description,
+            "page_number": img.page_number
+        })
+    
+    logger.info(f"Extracted {len(images_list)} images from structured output")
+    return images_list
 
 
 @app.get("/")
@@ -190,64 +378,15 @@ async def extract_paper_content(request: ExtractionRequest):
         gemini_file = genai.upload_file(temp_file_path)
         logger.info(f"File uploaded to Gemini: {gemini_file.name}")
 
-        # Initialize model
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
-
         # ========== EXTRACTION 1: Text Sections ==========
         logger.info("Extracting text sections...")
-        sections_prompt = """
-Extract all text sections from this research paper PDF.
-
-Return ONLY valid JSON with this structure (no markdown, no explanations):
-{"sections":[{"section_type":"abstract","section_title":"Abstract","content":"full text here"},...]}
-
-Extract these sections if present:
-- Abstract (section_type: "abstract")
-- Introduction (section_type: "introduction")
-- Background/Related Work (section_type: "background")
-- Methods/Methodology (section_type: "methods") - BE VERY DETAILED HERE
-- Results (section_type: "results")
-- Discussion (section_type: "discussion")
-- Conclusion (section_type: "conclusion")
-- Any other sections (section_type: "other")
-
-Include the COMPLETE text content for each section. For Methods, extract every detail about the methodology.
-"""
-
-        sections_response = model.generate_content([gemini_file, sections_prompt])
-        sections_text = sections_response.text
-
-        # Clean and parse JSON
-        sections_text = sections_text.replace("```json", "").replace("```", "").strip()
-        sections_data = json.loads(sections_text)
-        sections = sections_data.get("sections", [])
+        sections = extract_paper_sections(gemini_file)
 
         logger.info(f"Extracted {len(sections)} sections")
 
         # ========== EXTRACTION 2: Images and Figures ==========
         logger.info("Extracting images and figures...")
-        images_prompt = """
-Identify and describe ALL images, figures, charts, diagrams, screenshots, and tables in this research paper PDF.
-
-Return ONLY valid JSON with this structure (no markdown, no explanations):
-{"images":[{"image_type":"figure","caption":"Figure 1: ...","description":"detailed description","page_number":1},...]}
-
-For each visual element:
-- image_type: choose from screenshot, chart, figure, diagram, table, other
-- caption: extract the exact caption if present
-- description: describe what the image shows in detail
-- page_number: the page it appears on (if identifiable)
-
-Be thorough - identify EVERY visual element in the paper.
-"""
-
-        images_response = model.generate_content([gemini_file, images_prompt])
-        images_text = images_response.text
-
-        # Clean and parse JSON
-        images_text = images_text.replace("```json", "").replace("```", "").strip()
-        images_data = json.loads(images_text)
-        images = images_data.get("images", [])
+        images = extract_paper_images(gemini_file)
 
         logger.info(f"Extracted {len(images)} images")
 
@@ -282,7 +421,6 @@ Be thorough - identify EVERY visual element in the paper.
             logger.info(f"Stored {len(images)} images in database")
 
         # Update paper status
-        from datetime import datetime
         supabase.table("papers").update({
             "processing_status": "completed",
             "processed_at": datetime.utcnow().isoformat()

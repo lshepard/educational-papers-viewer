@@ -104,115 +104,146 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch PDF: ${pdfResponse.statusText}`)
     }
 
-    const pdfBlob = await pdfResponse.blob()
-    console.log(`PDF downloaded, size: ${pdfBlob.size} bytes`)
+    const pdfArrayBuffer = await pdfResponse.arrayBuffer()
+    const numBytes = pdfArrayBuffer.byteLength
+    console.log(`PDF downloaded, size: ${numBytes} bytes`)
 
-    // Upload PDF to Google Files API
-    console.log('Uploading PDF to Google Files API...')
-    const uploadUrl = 'https://generativelanguage.googleapis.com/upload/v1beta/files?key=' + geminiApiKey
+    // Step 1: Start resumable upload
+    console.log('Starting resumable upload to Google Files API...')
+    const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files`
 
-    const formData = new FormData()
-    formData.append('file', pdfBlob, 'paper.pdf')
-
-    // Create metadata
-    const metadata = {
-      file: {
-        display_name: paper.title || 'Research Paper',
-      }
-    }
-
-    const uploadResponse = await fetch(uploadUrl, {
+    const startResponse = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'X-Goog-Upload-Protocol': 'multipart',
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': numBytes.toString(),
+        'X-Goog-Upload-Header-Content-Type': 'application/pdf',
+        'Content-Type': 'application/json',
+        'x-goog-api-key': geminiApiKey,
       },
-      body: formData,
+      body: JSON.stringify({
+        file: {
+          display_name: paper.title || 'Research Paper'
+        }
+      })
+    })
+
+    if (!startResponse.ok) {
+      const errorText = await startResponse.text()
+      throw new Error(`Failed to start upload: ${startResponse.statusText} - ${errorText}`)
+    }
+
+    const uploadLocation = startResponse.headers.get('x-goog-upload-url')
+    if (!uploadLocation) {
+      throw new Error('No upload URL received from start request')
+    }
+
+    console.log(`Upload URL received, uploading file...`)
+
+    // Step 2: Upload the file bytes
+    const uploadResponse = await fetch(uploadLocation, {
+      method: 'POST',
+      headers: {
+        'Content-Length': numBytes.toString(),
+        'X-Goog-Upload-Offset': '0',
+        'X-Goog-Upload-Command': 'upload, finalize',
+      },
+      body: pdfArrayBuffer,
     })
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text()
-      throw new Error(`Failed to upload to Google Files: ${uploadResponse.statusText} - ${errorText}`)
+      throw new Error(`Failed to upload file: ${uploadResponse.statusText} - ${errorText}`)
     }
 
     const uploadResult = await uploadResponse.json()
     const fileUri = uploadResult.file.uri
-    console.log(`File uploaded: ${fileUri}`)
+    console.log(`File uploaded successfully: ${fileUri}`)
 
     // Initialize Gemini
     const genAI = new GoogleGenerativeAI(geminiApiKey)
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
-    // Create extraction prompt
-    const prompt = `
-You are a research paper analyzer. Extract the following information from this academic paper:
+    // ========== EXTRACTION 1: Text Sections ==========
+    console.log('Extracting text sections from PDF...')
+    const sectionsPrompt = `
+Extract all text sections from this research paper PDF.
 
-1. **Paper Sections**: Identify and extract these sections (if present):
-   - Abstract
-   - Introduction
-   - Background/Related Work
-   - Methods/Methodology
-   - Results
-   - Discussion
-   - Conclusion
+Return ONLY valid JSON with this structure (no markdown, no explanations):
+{"sections":[{"section_type":"abstract","section_title":"Abstract","content":"full text here"},...]}
 
-2. **Images and Figures**: Identify all images, charts, diagrams, screenshots, and tables. For each:
-   - Type (screenshot, chart, figure, diagram, table)
-   - Caption (if present)
-   - Brief description of what the image shows
-   - Page number (if identifiable)
+Extract these sections if present:
+- Abstract (section_type: "abstract")
+- Introduction (section_type: "introduction")
+- Background/Related Work (section_type: "background")
+- Methods/Methodology (section_type: "methods") - BE VERY DETAILED HERE
+- Results (section_type: "results")
+- Discussion (section_type: "discussion")
+- Conclusion (section_type: "conclusion")
+- Any other sections (section_type: "other")
 
-Return your response as a JSON object with this structure:
-{
-  "sections": [
-    {
-      "section_type": "introduction|background|methods|results|discussion|conclusion|abstract|other",
-      "section_title": "optional title",
-      "content": "full text content of this section"
-    }
-  ],
-  "images": [
-    {
-      "image_type": "screenshot|chart|figure|diagram|table|other",
-      "caption": "optional caption",
-      "description": "description of what the image shows",
-      "page_number": optional_number
-    }
-  ]
-}
-
-Be thorough and extract ALL content. For methods section, be especially detailed.
-If you cannot identify a clear section type, use "other" with an appropriate section_title.
+Include the COMPLETE text content for each section. For Methods, extract every detail about the methodology.
 `
 
-    console.log('Sending to Gemini for analysis...')
-
-    // Call Gemini with uploaded file
-    const result = await model.generateContent([
-      prompt,
-      {
-        fileData: {
-          mimeType: 'application/pdf',
-          fileUri: fileUri,
-        },
-      },
+    const sectionsResult = await model.generateContent([
+      { text: sectionsPrompt },
+      { file_data: { mime_type: 'application/pdf', file_uri: fileUri } }
     ])
 
-    const response = await result.response
-    const text = response.text()
+    let sectionsText = sectionsResult.response.text()
+    sectionsText = sectionsText.replace(/```json\n?/g, '').replace(/```\n?/g, '')
+    const sectionsJsonMatch = sectionsText.match(/\{[\s\S]*\}/)
 
-    console.log('Gemini response received')
-
-    // Parse JSON response
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('Failed to parse Gemini response as JSON')
+    let sections: PaperSection[] = []
+    if (sectionsJsonMatch) {
+      try {
+        const sectionsData = JSON.parse(sectionsJsonMatch[0])
+        sections = sectionsData.sections || []
+        console.log(`Extracted ${sections.length} sections`)
+      } catch (e) {
+        console.error('Failed to parse sections JSON:', e)
+      }
     }
 
-    const extracted = JSON.parse(jsonMatch[0])
-    const sections: PaperSection[] = extracted.sections || []
-    const images: PaperImage[] = extracted.images || []
+    // ========== EXTRACTION 2: Images and Figures ==========
+    console.log('Extracting images and figures from PDF...')
+    const imagesPrompt = `
+Identify and describe ALL images, figures, charts, diagrams, screenshots, and tables in this research paper PDF.
 
-    console.log(`Extracted ${sections.length} sections and ${images.length} images`)
+Return ONLY valid JSON with this structure (no markdown, no explanations):
+{"images":[{"image_type":"figure","caption":"Figure 1: ...","description":"detailed description","page_number":1},...]}
+
+For each visual element:
+- image_type: choose from screenshot, chart, figure, diagram, table, other
+- caption: extract the exact caption if present
+- description: describe what the image shows in detail
+- page_number: the page it appears on (if identifiable)
+
+Be thorough - identify EVERY visual element in the paper.
+`
+
+    const imagesResult = await model.generateContent([
+      { text: imagesPrompt },
+      { file_data: { mime_type: 'application/pdf', file_uri: fileUri } }
+    ])
+
+    let imagesText = imagesResult.response.text()
+    imagesText = imagesText.replace(/```json\n?/g, '').replace(/```\n?/g, '')
+    const imagesJsonMatch = imagesText.match(/\{[\s\S]*\}/)
+
+    let images: PaperImage[] = []
+    if (imagesJsonMatch) {
+      try {
+        const imagesData = JSON.parse(imagesJsonMatch[0])
+        images = imagesData.images || []
+        console.log(`Extracted ${images.length} images`)
+      } catch (e) {
+        console.error('Failed to parse images JSON:', e)
+      }
+    }
+
+    console.log(`Total extracted: ${sections.length} sections and ${images.length} images`)
 
     // Store sections in database
     if (sections.length > 0) {
