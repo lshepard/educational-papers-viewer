@@ -12,6 +12,14 @@ RUN npm install
 # Copy source code
 COPY . .
 
+# Accept build arguments from Railway
+ARG REACT_APP_SUPABASE_URL
+ARG REACT_APP_SUPABASE_ANON_KEY
+
+# Set them as environment variables for the build
+ENV REACT_APP_SUPABASE_URL=$REACT_APP_SUPABASE_URL
+ENV REACT_APP_SUPABASE_ANON_KEY=$REACT_APP_SUPABASE_ANON_KEY
+
 # Build the React app
 RUN npm run build
 
