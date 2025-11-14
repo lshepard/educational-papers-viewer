@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { GenaiPaper } from '../supabase'
 import { PapersService } from '../services/papersService'
 
@@ -19,10 +19,6 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
     fetchPapers()
   }, [])
 
-  useEffect(() => {
-    filterPapers()
-  }, [papers, searchTerm, fileKindFilter, yearFilter])
-
   const fetchPapers = async () => {
     try {
       const data = await PapersService.getAllPapers()
@@ -34,7 +30,7 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
     }
   }
 
-  const filterPapers = () => {
+  const filterPapers = useCallback(() => {
     let filtered = papers
 
     if (searchTerm) {
@@ -58,7 +54,11 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
     }
 
     setFilteredPapers(filtered)
-  }
+  }, [papers, searchTerm, fileKindFilter, yearFilter])
+
+  useEffect(() => {
+    filterPapers()
+  }, [filterPapers])
 
   const getUniqueYears = () => {
     const years = papers

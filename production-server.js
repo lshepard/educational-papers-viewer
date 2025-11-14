@@ -101,7 +101,7 @@ app.post('/api/cache/clear', (req, res) => {
 app.use(express.static(path.join(__dirname, 'build')));
 
 // Handle React routing - serve index.html for all non-API routes
-app.get('*', (req, res) => {
+app.get('/*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 

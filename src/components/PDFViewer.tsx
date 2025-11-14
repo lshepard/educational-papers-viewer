@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import ReactMarkdown from 'react-markdown'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -42,12 +42,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [extractionMessage, setExtractionMessage] = useState<string | null>(null)
   const { user } = useAuth()
 
-  React.useEffect(() => {
-    loadContent()
-    loadImages()
-  }, [paper])
-
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     setLoading(true)
     setError(null)
 
@@ -89,9 +84,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [paper])
 
-  const loadImages = async () => {
+  const loadImages = useCallback(async () => {
     setImagesLoading(true)
 
     try {
@@ -110,7 +105,12 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     } finally {
       setImagesLoading(false)
     }
-  }
+  }, [paper.id])
+
+  React.useEffect(() => {
+    loadContent()
+    loadImages()
+  }, [loadContent, loadImages])
 
   const getImageUrl = (image: PaperImage): string => {
     const bucket = paper.storage_bucket || 'papers'
