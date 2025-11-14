@@ -10,10 +10,10 @@ const AdminLogin: React.FC = () => {
   const { signIn, user } = useAuth()
   const navigate = useNavigate()
 
-  // If already logged in, redirect to home
+  // If already logged in, redirect to admin dashboard
   React.useEffect(() => {
     if (user) {
-      navigate('/')
+      navigate('/admin')
     }
   }, [user, navigate])
 
@@ -29,7 +29,7 @@ const AdminLogin: React.FC = () => {
       setLoading(false)
     } else {
       // Success - redirect will happen via useEffect
-      navigate('/')
+      navigate('/admin')
     }
   }
 
