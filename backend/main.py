@@ -55,6 +55,37 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Papers Viewer Backend...")
     logger.info("Gemini API configured")
     logger.info("Supabase client initialized")
+
+    # Check Google Cloud Text-to-Speech credentials
+    try:
+        logger.info("Checking Google Cloud Text-to-Speech credentials...")
+        tts_client = texttospeech.TextToSpeechClient()
+        # Try to list voices to verify API access
+        voices = tts_client.list_voices(language_code="en-US")
+        logger.info(f"✅ Google Cloud TTS configured successfully ({len(voices.voices)} voices available)")
+        app.state.tts_available = True
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("❌ GOOGLE CLOUD TEXT-TO-SPEECH NOT CONFIGURED")
+        logger.error("=" * 80)
+        logger.error(f"Error: {e}")
+        logger.error("")
+        logger.error("Podcast generation will NOT be available.")
+        logger.error("")
+        logger.error("To fix this, set up Google Cloud credentials:")
+        logger.error("  Local dev:  gcloud auth application-default login")
+        logger.error("  Production: Set GOOGLE_APPLICATION_CREDENTIALS environment variable")
+        logger.error("")
+        logger.error("For more info: https://cloud.google.com/docs/authentication/external/set-up-adc")
+        logger.error("=" * 80)
+
+        # Fail to start if TTS is not configured
+        raise RuntimeError(
+            "Google Cloud Text-to-Speech credentials not configured. "
+            "Run 'gcloud auth application-default login' or set GOOGLE_APPLICATION_CREDENTIALS. "
+            "See logs above for details."
+        )
+
     yield
     logger.info("Shutting down Papers Viewer Backend...")
 
@@ -535,7 +566,8 @@ async def health_check():
             "status": "healthy",
             "services": {
                 "supabase": "connected",
-                "gemini": "configured"
+                "gemini": "configured",
+                "google_tts": "configured" if getattr(app.state, 'tts_available', False) else "not configured"
             }
         }
     except Exception as e:
@@ -806,12 +838,19 @@ async def generate_podcast(request: PodcastGenerationRequest):
     1. Fetches the paper PDF from Supabase
     2. Uploads PDF to Gemini
     3. Generates a NotebookLM-style podcast script with two hosts
-    4. Uses Gemini 2.5's native TTS to generate multi-speaker audio
+    4. Uses Google Cloud TTS to generate multi-speaker audio
     5. Stores the audio in Supabase storage
     6. Returns the episode with audio URL
 
     The generation happens synchronously and may take 2-5 minutes.
     """
+    # Check if TTS is available (should always be true if server started successfully)
+    if not getattr(app.state, 'tts_available', False):
+        raise HTTPException(
+            status_code=503,
+            detail="Podcast generation is not available - Google Cloud TTS not configured"
+        )
+
     paper_id = request.paper_id
     temp_file_path = None
     gemini_file = None
