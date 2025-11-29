@@ -1,136 +1,267 @@
 # Railway Deployment Guide
 
-This guide explains how to deploy the Papers Viewer application to Railway.
+This guide explains how to deploy both the frontend and backend services to Railway.
 
-## 🚀 Quick Deploy
+## Overview
 
-### Option 1: Deploy from GitHub
+You'll need to deploy **two separate services** on Railway:
 
-1. **Push to GitHub**: Commit and push your code to a GitHub repository
-2. **Connect to Railway**: Go to [railway.app](https://railway.app) and connect your GitHub repo
-3. **Set Environment Variables**: In Railway dashboard, add these variables:
-   ```
-   REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
-   REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3bW11anN1YmNja3liemtndmlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxNDU1NTIsImV4cCI6MjA3NDcyMTU1Mn0.tk-BD7MledKOkFOrKJydu2RNUyy9zk8oGhIHr4rHKvM
-   ```
-4. **Deploy**: Railway will automatically build and deploy using the Dockerfile
+1. **Frontend** - React app with Express server (root directory)
+2. **Backend** - Python FastAPI service (in `backend/` directory)
 
-### Option 2: Railway CLI
+## Prerequisites
 
-1. **Install Railway CLI**:
-   ```bash
-   npm install -g @railway/cli
-   ```
+- Railway account
+- Both services in the same Railway project
+- Supabase database already set up
 
-2. **Login and Initialize**:
-   ```bash
-   railway login
-   railway init
-   ```
+---
 
-3. **Set Environment Variables**:
-   ```bash
-   railway variables set REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
-   railway variables set REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3bW11anN1YmNja3liemtndmlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxNDU1NTIsImV4cCI6MjA3NDcyMTU1Mn0.tk-BD7MledKOkFOrKJydu2RNUyy9zk8oGhIHr4rHKvM
-   ```
+## Step 1: Deploy Backend Service
 
-4. **Deploy**:
-   ```bash
-   railway up
-   ```
+### Create New Service
 
-## 🏗️ How It Works
+1. In your Railway project, click **+ New**
+2. Select **GitHub Repo** (or use existing repo)
+3. If using the same repo:
+   - Set **Root Directory** to `backend`
+   - Railway will auto-detect the `backend/Dockerfile`
 
-The Docker setup:
+### Configure Backend Environment Variables
 
-1. **Multi-stage Build**: 
-   - Builds the React app in production mode
-   - Creates a combined Node.js server
+In the Backend service **Variables** tab, add:
 
-2. **Combined Server**:
-   - Serves the React app as static files
-   - Provides API endpoints at `/api/*`
-   - Handles React Router with catch-all route
-
-3. **Production Optimizations**:
-   - Lightweight Alpine Linux base
-   - Production dependencies only
-   - Health checks included
-   - Proper error handling
-
-## 🔧 Architecture
-
-```
-Railway Container
-├── React App (served as static files)
-├── Express API Server
-│   ├── /api/sheets (Google Sheets proxy)
-│   ├── /api/health (health check)
-│   └── /api/cache/clear (cache management)
-└── Single process serving both
+```env
+SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key-from-supabase
+GEMINI_API_KEY=your-gemini-api-key
+FRONTEND_URL=https://your-frontend.up.railway.app
+PORT=8000
 ```
 
-## 🌐 URLs
+**Important Notes:**
+- `SUPABASE_SERVICE_KEY` is the **service role key** (not anon key)
+  - Get it from Supabase Dashboard → Settings → API → service_role key
+- `FRONTEND_URL` should be your frontend's Railway URL (add this after deploying frontend)
+- `PORT=8000` is the default, but Railway may override it
 
-After deployment, your app will be available at:
-- **Main App**: `https://your-app.railway.app`
-- **API Health**: `https://your-app.railway.app/api/health`  
-- **Sheets Data**: `https://your-app.railway.app/api/sheets`
+### Generate Domain
 
-## 📋 Environment Variables
+1. Go to Backend service → **Settings → Networking**
+2. Click **Generate Domain**
+3. Copy the URL (e.g., `https://backend-production-xxxx.up.railway.app`)
+4. **Save this URL** - you'll need it for frontend configuration
 
-Set these in Railway dashboard:
+---
 
-| Variable | Value | Description |
-|----------|--------|-------------|
-| `REACT_APP_SUPABASE_URL` | Your Supabase URL | Supabase project URL |
-| `REACT_APP_SUPABASE_ANON_KEY` | Your Supabase key | Supabase anonymous key |
-| `PORT` | (auto-set by Railway) | Server port |
+## Step 2: Deploy/Update Frontend Service
 
-## ✅ Verification
+### Add/Update Frontend Environment Variables
 
-After deployment, verify everything works:
+In your **Frontend service** → **Variables** tab, add:
 
-1. **Health Check**: Visit `/api/health` - should return JSON status
-2. **Sheets Data**: Visit `/api/sheets` - should return paper data  
-3. **Main App**: Visit root URL - should load React app
-4. **PDF Viewing**: Test PDF viewer with papers that have storage
+```env
+REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=your-anon-key
+REACT_APP_BACKEND_URL=https://backend-production-xxxx.up.railway.app
+```
 
-## 🐛 Troubleshooting
+**Important Notes:**
+- Use the backend URL from Step 1
+- **No trailing slash** on `REACT_APP_BACKEND_URL`
+- Use the **anon key** (not service role key)
 
-### Build Issues
-- Check Railway build logs for dependency errors
-- Verify all files are committed to git
+### Redeploy Frontend
 
-### Runtime Issues  
-- Check Railway deployment logs
-- Verify environment variables are set
-- Test API endpoints directly
+After adding `REACT_APP_BACKEND_URL`:
 
-### CORS Issues
-- The combined server handles CORS automatically
-- API and frontend are served from same domain
+1. Click **Deployments** tab
+2. Click the three dots on latest deployment → **Redeploy**
 
-## 🚧 Local Testing
+Or push a new commit to trigger rebuild.
 
-Test the production build locally:
+---
 
+## Step 3: Update Backend with Frontend URL
+
+Now that your frontend is deployed:
+
+1. Copy your frontend Railway URL from **Settings → Domains**
+2. Go to Backend service → **Variables**
+3. Set `FRONTEND_URL=https://your-frontend.up.railway.app`
+4. Redeploy backend service
+
+This enables CORS so the frontend can call the backend API.
+
+---
+
+## Verification
+
+### 1. Test Backend Health
+
+Visit: `https://your-backend.up.railway.app/health`
+
+Expected response:
+```json
+{
+  "success": true,
+  "status": "healthy",
+  "services": {
+    "supabase": "connected",
+    "gemini": "configured"
+  }
+}
+```
+
+### 2. Test Frontend
+
+1. Visit your frontend Railway URL
+2. Browse papers (should work without backend)
+3. Sign in as admin
+4. Open a paper
+5. Click **Extract Content** button
+6. Should successfully extract content and show images
+
+---
+
+## Troubleshooting
+
+### CORS Errors
+
+**Symptom:** Browser console shows CORS policy errors
+
+**Fix:**
+- Verify `FRONTEND_URL` in backend matches your frontend Railway URL exactly
+- Ensure no trailing slash in URL
+- Redeploy backend after changing `FRONTEND_URL`
+
+### "supabaseUrl is required" Error
+
+**Symptom:** Frontend shows "supabaseUrl is required" error
+
+**Fix:**
+- Verify all `REACT_APP_*` variables are set in frontend service
+- Redeploy frontend (environment variables are embedded at build time)
+- Check Railway build logs for errors
+
+### Backend Health Check Fails
+
+**Symptom:** `/health` endpoint returns 500 or unhealthy status
+
+**Fix:**
+- Verify `SUPABASE_URL` is correct
+- Verify `SUPABASE_SERVICE_KEY` is the **service role key** (not anon)
+- Check Railway logs: **Deployments → [latest] → View Logs**
+- Test Supabase connection from Supabase dashboard
+
+### Extract Content Button Does Nothing
+
+**Symptom:** Button clicks but nothing happens
+
+**Fix:**
+- Open browser console and check for errors
+- Verify `REACT_APP_BACKEND_URL` is set in frontend
+- Verify backend service is running (check health endpoint)
+- Check backend logs for errors
+- Verify CORS is configured correctly
+
+### Backend Build Fails
+
+**Symptom:** Backend deployment fails during build
+
+**Fix:**
+- Check that `backend/Dockerfile` exists
+- Verify root directory is set to `backend` in Railway settings
+- Check Railway build logs for specific errors
+- Verify `pyproject.toml` and `uv.lock` are committed
+
+---
+
+## Environment Variables Summary
+
+### Frontend Service (Root Directory)
+```env
+REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=eyJhb... (anon key)
+REACT_APP_BACKEND_URL=https://backend-production-xxxx.up.railway.app
+```
+
+### Backend Service (backend/ Directory)
+```env
+SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
+SUPABASE_SERVICE_KEY=eyJhb... (service_role key)
+GEMINI_API_KEY=AIza... (your Gemini API key)
+FRONTEND_URL=https://frontend-production-xxxx.up.railway.app
+PORT=8000
+```
+
+---
+
+## Architecture
+
+```
+Railway Project
+├── Frontend Service (root/)
+│   ├── React App (build/ folder)
+│   ├── Express Server (production-server.js)
+│   ├── /api/sheets → Google Sheets proxy
+│   ├── /api/health → Health check
+│   └── Serves on PORT=3001
+│
+└── Backend Service (backend/)
+    ├── FastAPI App (main.py)
+    ├── /extract → PDF extraction with Gemini
+    ├── /search → Full-text search
+    ├── /health → Health check
+    └── Serves on PORT=8000
+```
+
+---
+
+## Local Development
+
+### Frontend
 ```bash
-# Build the Docker image
-docker build -t papers-viewer .
-
-# Run the container
-docker run -p 3001:3001 \
-  -e REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co \
-  -e REACT_APP_SUPABASE_ANON_KEY=your_key_here \
-  papers-viewer
-
-# Visit http://localhost:3001
+npm start
+# Runs on http://localhost:3000
+# Uses REACT_APP_BACKEND_URL=http://localhost:8000
 ```
 
-## 📝 Notes
+### Backend
+```bash
+cd backend
+uv sync
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+python main.py
+# Runs on http://localhost:8000
+```
 
-- The app combines both frontend and backend in a single container
-- Google Sheets data is cached for 5 minutes to improve performance
-- Railway automatically handles HTTPS and custom domains
-- The build process optimizes for production deployment
+### Environment Files
+
+**Root `.env`:**
+```env
+REACT_APP_SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=your-anon-key
+REACT_APP_BACKEND_URL=http://localhost:8000
+```
+
+**Backend `.env`:**
+```env
+SUPABASE_URL=https://hwmmujsubcckybzkgvil.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+GEMINI_API_KEY=your-gemini-api-key
+FRONTEND_URL=http://localhost:3000
+```
+
+---
+
+## Notes
+
+- Both services should be in the same Railway **project**
+- Each service needs its own set of environment variables
+- Backend uses **service role key** for admin access
+- Frontend uses **anon key** for user access
+- CORS is configured to allow cross-origin requests between services
+- Changes to environment variables require a redeploy to take effect
+- Backend extracts content using Gemini AI (requires API key)
+- Backend processes PDF files and stores images in Supabase storage

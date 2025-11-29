@@ -24,6 +24,7 @@ import google.generativeai as genai
 from supabase import create_client, Client
 import fitz  # PyMuPDF
 from PIL import Image
+from google.cloud import texttospeech
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY]):
     raise ValueError("Missing required environment variables")
@@ -66,9 +68,14 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# Allow both localhost and production frontend
+allowed_origins = [
+    "http://localhost:3000",
+    FRONTEND_URL
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React app
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -121,6 +128,19 @@ class SearchResponse(BaseModel):
     query: str
     results: List[SearchResult]
     count: int
+
+
+class PodcastGenerationRequest(BaseModel):
+    """Request model for podcast generation."""
+    paper_id: str
+
+
+class PodcastGenerationResponse(BaseModel):
+    """Response model for podcast generation."""
+    success: bool
+    episode_id: str
+    audio_url: str
+    message: str
 
 
 
@@ -496,6 +516,8 @@ async def root():
         "endpoints": {
             "/extract": "POST - Extract content from paper",
             "/search": "POST - Full-text search across paper sections",
+            "/podcast/generate": "POST - Generate podcast episode from paper (takes 2-5 min)",
+            "/podcast/feed.xml": "GET - Get RSS podcast feed",
             "/health": "GET - Health check"
         }
     }
@@ -773,6 +795,376 @@ async def extract_paper_content(request: ExtractionRequest):
                 logger.debug(f"Deleted Gemini file: {gemini_file.name}")
             except Exception as e:
                 logger.warning(f"Could not delete Gemini file: {e}")
+
+
+@app.post("/podcast/generate", response_model=PodcastGenerationResponse)
+async def generate_podcast(request: PodcastGenerationRequest):
+    """
+    Generate a podcast episode from a research paper using Gemini AI.
+
+    This endpoint:
+    1. Fetches the paper PDF from Supabase
+    2. Uploads PDF to Gemini
+    3. Generates a NotebookLM-style podcast script with two hosts
+    4. Uses Gemini 2.5's native TTS to generate multi-speaker audio
+    5. Stores the audio in Supabase storage
+    6. Returns the episode with audio URL
+
+    The generation happens synchronously and may take 2-5 minutes.
+    """
+    paper_id = request.paper_id
+    temp_file_path = None
+    gemini_file = None
+
+    try:
+        logger.info(f"Starting podcast generation for paper: {paper_id}")
+
+        # Update database to track progress
+        episode_data = {
+            "paper_id": paper_id,
+            "title": "Generating...",
+            "description": "Podcast is being generated",
+            "generation_status": "processing"
+        }
+        episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
+        episode_id = episode_response.data[0]["id"]
+
+        # Fetch paper details
+        paper_response = supabase.table("papers").select("*").eq("id", paper_id).single().execute()
+        paper = paper_response.data
+
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+
+        # Get PDF URL
+        if paper.get("storage_bucket") and paper.get("storage_path"):
+            storage_path = paper["storage_path"]
+            bucket_prefix = f"{paper['storage_bucket']}/"
+            if storage_path.startswith(bucket_prefix):
+                storage_path = storage_path[len(bucket_prefix):]
+            pdf_url = supabase.storage.from_(paper["storage_bucket"]).get_public_url(storage_path)
+        elif paper.get("paper_url"):
+            pdf_url = paper["paper_url"]
+        else:
+            raise HTTPException(status_code=400, detail="No PDF URL available")
+
+        # Download PDF
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get(pdf_url, timeout=60.0)
+            response.raise_for_status()
+            pdf_content = response.content
+
+        logger.info(f"PDF downloaded, size: {len(pdf_content)} bytes")
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(pdf_content)
+            temp_file_path = temp_file.name
+
+        # Upload to Gemini
+        logger.info("Uploading PDF to Gemini...")
+        gemini_file = genai.upload_file(temp_file_path)
+        logger.info(f"File uploaded to Gemini: {gemini_file.name}")
+
+        # Generate podcast script using Gemini
+        logger.info("Generating podcast script...")
+        script_prompt = """You are creating a podcast script in the style of Google's NotebookLM Audio Overviews.
+
+Create an engaging, conversational podcast discussion between two hosts about this research paper:
+- Host 1 (Alex): Enthusiastic and asks great questions
+- Host 2 (Sam): Knowledgeable and explains concepts clearly
+
+The podcast should:
+- Be lighthearted and fun, but informative
+- Discuss key findings, methodology, and real-world implications
+- Use natural, conversational language (including "um", "like", pauses)
+- Be about 3-5 minutes when spoken (roughly 450-750 words)
+- Make complex topics accessible and engaging
+
+Format the script like this:
+Alex: [speaks naturally]
+Sam: [responds naturally]
+Alex: [continues conversation]
+...
+
+Focus on making the content digestible and interesting for casual listeners."""
+
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        script_response = model.generate_content([gemini_file, script_prompt])
+        script_text = script_response.text
+
+        logger.info(f"Generated script ({len(script_text)} characters)")
+        logger.debug(f"Script preview: {script_text[:200]}...")
+
+        # Parse script into speaker segments
+        logger.info("Parsing script into speaker segments...")
+        segments = []
+        current_speaker = None
+        current_text = []
+
+        for line in script_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check if line starts with "Alex:" or "Sam:"
+            if line.startswith('Alex:'):
+                if current_speaker and current_text:
+                    segments.append((current_speaker, ' '.join(current_text)))
+                current_speaker = 'Alex'
+                current_text = [line[5:].strip()]
+            elif line.startswith('Sam:'):
+                if current_speaker and current_text:
+                    segments.append((current_speaker, ' '.join(current_text)))
+                current_speaker = 'Sam'
+                current_text = [line[4:].strip()]
+            elif current_speaker:
+                current_text.append(line)
+
+        # Add final segment
+        if current_speaker and current_text:
+            segments.append((current_speaker, ' '.join(current_text)))
+
+        logger.info(f"Parsed {len(segments)} segments from script")
+
+        # Generate audio using Google Cloud Text-to-Speech with multiple voices
+        logger.info("Generating audio with Google Cloud TTS...")
+
+        # Initialize TTS client
+        tts_client = texttospeech.TextToSpeechClient()
+
+        # Define voices for each speaker
+        voices = {
+            'Alex': {
+                'name': 'en-US-Neural2-J',  # Male voice, energetic
+                'gender': texttospeech.SsmlVoiceGender.MALE
+            },
+            'Sam': {
+                'name': 'en-US-Neural2-F',  # Female voice, clear
+                'gender': texttospeech.SsmlVoiceGender.FEMALE
+            }
+        }
+
+        # Generate audio for each segment and combine
+        audio_segments = []
+
+        for speaker, text in segments:
+            # Build SSML with proper voice tags
+            ssml = f"""<speak>
+                <prosody rate="medium" pitch="0st">
+                    {text}
+                </prosody>
+            </speak>"""
+
+            # Configure the voice
+            voice = texttospeech.VoiceSelectionParams(
+                language_code='en-US',
+                name=voices[speaker]['name'],
+                ssml_gender=voices[speaker]['gender']
+            )
+
+            # Configure audio output
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=1.0,
+                pitch=0.0
+            )
+
+            # Synthesize speech
+            synthesis_input = texttospeech.SynthesisInput(ssml=ssml)
+            response = tts_client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice,
+                audio_config=audio_config
+            )
+
+            audio_segments.append(response.audio_content)
+            logger.debug(f"Generated audio for {speaker}: {len(response.audio_content)} bytes")
+
+        # Combine all audio segments
+        audio_data = b''.join(audio_segments)
+        logger.info(f"Combined audio generated, total size: {len(audio_data)} bytes")
+
+        # Upload audio to Supabase storage
+        filename = f"{episode_id}.mp3"
+        storage_path = f"{paper_id}/{filename}"
+
+        logger.info(f"Uploading audio to storage: episodes/{storage_path}")
+        supabase.storage.from_("episodes").upload(
+            path=storage_path,
+            file=audio_data,
+            file_options={
+                "content-type": "audio/mpeg",
+                "upsert": "true"
+            }
+        )
+
+        # Get public URL
+        public_url = supabase.storage.from_("episodes").get_public_url(storage_path)
+
+        # Create episode metadata
+        episode_title = f"Discussion: {paper.get('title', 'Untitled Paper')}"
+        episode_description = f"An AI-generated podcast discussing the research paper"
+        if paper.get('authors'):
+            episode_description += f" by {paper['authors']}"
+        if paper.get('year'):
+            episode_description += f" ({paper['year']})"
+
+        # Update episode record
+        supabase.table("podcast_episodes").update({
+            "title": episode_title,
+            "description": episode_description,
+            "storage_path": storage_path,
+            "audio_url": public_url,
+            "generation_status": "completed"
+        }).eq("id", episode_id).execute()
+
+        logger.info(f"Podcast generation completed: {episode_id}")
+
+        return PodcastGenerationResponse(
+            success=True,
+            episode_id=episode_id,
+            audio_url=public_url,
+            message="Podcast generated successfully!"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate podcast: {e}", exc_info=True)
+
+        # Update episode status to failed if we have an episode_id
+        if 'episode_id' in locals():
+            supabase.table("podcast_episodes").update({
+                "generation_status": "failed",
+                "generation_error": str(e)
+            }).eq("id", episode_id).execute()
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        # Cleanup
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except Exception as e:
+                logger.warning(f"Could not delete temp file: {e}")
+
+        if gemini_file:
+            try:
+                gemini_file.delete()
+            except Exception as e:
+                logger.warning(f"Could not delete Gemini file: {e}")
+
+
+
+
+@app.get("/podcast/feed.xml")
+async def get_podcast_feed():
+    """
+    Generate an RSS feed for the podcast.
+
+    This endpoint:
+    1. Fetches the podcast feed configuration
+    2. Fetches all completed episodes
+    3. Generates an RSS 2.0 feed with iTunes podcast extensions
+    4. Returns the XML feed
+
+    The feed can be submitted to podcast directories like Apple Podcasts, Spotify, etc.
+    """
+    try:
+        logger.info("Generating podcast RSS feed")
+
+        # Fetch feed configuration
+        feed_config_response = supabase.table("podcast_feed_config").select("*").limit(1).execute()
+        if feed_config_response.data:
+            feed_config = feed_config_response.data[0]
+        else:
+            # Use default config
+            feed_config = {
+                "title": "Research Papers Podcast",
+                "description": "AI-generated podcasts discussing the latest research papers",
+                "author": "Papers Viewer AI",
+                "language": "en-us",
+                "category": "Science",
+                "explicit": False
+            }
+
+        # Fetch all completed episodes
+        episodes_response = supabase.table("podcast_episodes").select("*").eq(
+            "generation_status", "completed"
+        ).order("published_at", desc=True).execute()
+        episodes = episodes_response.data
+
+        # Build RSS feed
+        from xml.etree.ElementTree import Element, SubElement, tostring
+        from datetime import datetime as dt
+
+        # RSS root
+        rss = Element("rss", version="2.0")
+        rss.set("xmlns:itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
+        rss.set("xmlns:content", "http://purl.org/rss/1.0/modules/content/")
+
+        channel = SubElement(rss, "channel")
+
+        # Channel metadata
+        SubElement(channel, "title").text = feed_config.get("title", "Research Papers Podcast")
+        SubElement(channel, "description").text = feed_config.get("description", "AI-generated podcasts about research papers")
+        SubElement(channel, "language").text = feed_config.get("language", "en-us")
+
+        # iTunes specific tags
+        SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}author").text = feed_config.get("author", "Papers Viewer AI")
+        SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}explicit").text = "yes" if feed_config.get("explicit", False) else "no"
+
+        if feed_config.get("image_url"):
+            itunes_image = SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}image")
+            itunes_image.set("href", feed_config["image_url"])
+
+        category = SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}category")
+        category.set("text", feed_config.get("category", "Science"))
+
+        # Add episodes
+        for episode in episodes:
+            item = SubElement(channel, "item")
+
+            SubElement(item, "title").text = episode["title"]
+            SubElement(item, "description").text = episode.get("description", "")
+
+            # Enclosure (audio file)
+            if episode.get("audio_url"):
+                enclosure = SubElement(item, "enclosure")
+                enclosure.set("url", episode["audio_url"])
+                enclosure.set("type", "audio/mpeg")
+                # Note: We should ideally get the file size, but for now we'll omit it
+                # enclosure.set("length", str(file_size))
+
+            # Publication date (RFC 2822 format)
+            if episode.get("published_at"):
+                pub_date = dt.fromisoformat(episode["published_at"].replace('Z', '+00:00'))
+                SubElement(item, "pubDate").text = pub_date.strftime("%a, %d %b %Y %H:%M:%S %z")
+
+            # GUID
+            SubElement(item, "guid", isPermaLink="false").text = episode["id"]
+
+            # iTunes specific
+            if episode.get("duration_seconds"):
+                SubElement(item, "{http://www.itunes.com/dtds/podcast-1.0.dtd}duration").text = str(episode["duration_seconds"])
+
+        # Convert to string
+        from xml.dom import minidom
+        xml_str = tostring(rss, encoding="unicode")
+        # Pretty print
+        dom = minidom.parseString(xml_str)
+        pretty_xml = dom.toprettyxml(indent="  ")
+
+        # Return as XML response
+        from fastapi.responses import Response
+        return Response(content=pretty_xml, media_type="application/xml")
+
+    except Exception as e:
+        logger.error(f"Failed to generate podcast feed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

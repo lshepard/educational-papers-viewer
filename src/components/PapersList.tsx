@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { GenaiPaper } from '../supabase'
 import { PapersService } from '../services/papersService'
+import { PodcastService } from '../services/podcastService'
 
 interface PapersListProps {
   onSelectPaper: (paper: GenaiPaper) => void
@@ -14,6 +15,8 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
   const [searchTerm, setSearchTerm] = useState('')
   const [fileKindFilter, setFileKindFilter] = useState<string>('')
   const [yearFilter, setYearFilter] = useState<string>('')
+  const [generatingPodcast, setGeneratingPodcast] = useState<Record<string, boolean>>({})
+  const [podcastStatus, setPodcastStatus] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchPapers()
@@ -67,6 +70,37 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
       .filter((year, index, arr) => arr.indexOf(year) === index)
       .sort((a, b) => b - a)
     return years
+  }
+
+  const handleGeneratePodcast = async (paperId: string) => {
+    try {
+      setGeneratingPodcast(prev => ({ ...prev, [paperId]: true }))
+      setPodcastStatus(prev => ({ ...prev, [paperId]: 'Generating... (2-5 min)' }))
+
+      // Generate podcast (synchronous, takes 2-5 minutes)
+      const response = await PodcastService.generatePodcast(paperId)
+
+      // Success!
+      setPodcastStatus(prev => ({ ...prev, [paperId]: 'Completed!' }))
+
+      // Open audio in new tab
+      if (response.audio_url) {
+        window.open(response.audio_url, '_blank')
+      }
+
+      // Reset status after 3 seconds
+      setTimeout(() => {
+        setPodcastStatus(prev => ({ ...prev, [paperId]: '' }))
+      }, 3000)
+    } catch (error) {
+      console.error('Failed to generate podcast:', error)
+      setPodcastStatus(prev => ({
+        ...prev,
+        [paperId]: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      }))
+    } finally {
+      setGeneratingPodcast(prev => ({ ...prev, [paperId]: false }))
+    }
   }
 
   if (loading) return <div className="loading">Loading papers...</div>
@@ -150,6 +184,16 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
                     disabled={!paper.file_kind || (paper.file_kind !== 'pdf' && paper.file_kind !== 'markdown')}
                   >
                     {paper.file_kind === 'pdf' ? 'View PDF' : paper.file_kind === 'markdown' ? 'View Markdown' : 'View'}
+                  </button>
+                  <button
+                    onClick={() => handleGeneratePodcast(paper.id)}
+                    className="podcast-btn"
+                    disabled={generatingPodcast[paper.id] || paper.file_kind !== 'pdf'}
+                    title={paper.file_kind !== 'pdf' ? 'Only PDF papers can be converted to podcasts' : 'Generate podcast episode'}
+                  >
+                    {generatingPodcast[paper.id]
+                      ? podcastStatus[paper.id] || 'Generating...'
+                      : 'Add to Podcast'}
                   </button>
                   <a
                     href={paper.source_url}

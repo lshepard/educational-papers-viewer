@@ -123,7 +123,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     setExtractionMessage(null)
 
     try {
-      const response = await fetch('http://localhost:8000/extract', {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
+      const response = await fetch(`${backendUrl}/extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
