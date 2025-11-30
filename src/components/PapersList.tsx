@@ -184,12 +184,16 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
               <th>Venue</th>
               <th>Application</th>
               <th>Type</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredPapers.map(paper => (
-              <tr key={paper.id} className="paper-row">
+              <tr
+                key={paper.id}
+                className="paper-row clickable"
+                onClick={() => onSelectPaper(paper)}
+                style={{ cursor: 'pointer' }}
+              >
                 <td className="paper-title">
                   <strong>{paper.title || 'Untitled'}</strong>
                 </td>
@@ -209,65 +213,6 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
                   <span className={`file-kind ${paper.file_kind || 'other'}`}>
                     {(paper.file_kind || 'other').toUpperCase()}
                   </span>
-                </td>
-                <td className="paper-actions">
-                  <button
-                    onClick={() => onSelectPaper(paper)}
-                    className="view-btn"
-                    disabled={!paper.file_kind || (paper.file_kind !== 'pdf' && paper.file_kind !== 'markdown')}
-                  >
-                    {paper.file_kind === 'pdf' ? 'View PDF' : paper.file_kind === 'markdown' ? 'View Markdown' : 'View'}
-                  </button>
-
-                  {/* Show podcast link if episode exists and is completed */}
-                  {podcastEpisodes[paper.id]?.generation_status === 'completed' && podcastEpisodes[paper.id]?.audio_url && (
-                    <a
-                      href={podcastEpisodes[paper.id].audio_url!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="podcast-link"
-                      title="Listen to podcast episode"
-                    >
-                      🎧 Podcast
-                    </a>
-                  )}
-
-                  {/* Show processing status if generating */}
-                  {podcastEpisodes[paper.id]?.generation_status === 'processing' && (
-                    <span className="podcast-status processing">
-                      ⏳ Generating...
-                    </span>
-                  )}
-
-                  {/* Show failed status if failed */}
-                  {podcastEpisodes[paper.id]?.generation_status === 'failed' && user && (
-                    <span className="podcast-status failed" title="Podcast generation failed">
-                      ❌ Failed
-                    </span>
-                  )}
-
-                  {/* Show "Add to Podcast" button only if: logged in as admin, no podcast exists, and is PDF */}
-                  {user && !podcastEpisodes[paper.id] && paper.file_kind === 'pdf' && (
-                    <button
-                      onClick={() => handleGeneratePodcast(paper.id)}
-                      className="podcast-btn"
-                      disabled={generatingPodcast[paper.id]}
-                      title="Generate podcast episode"
-                    >
-                      {generatingPodcast[paper.id]
-                        ? podcastStatus[paper.id] || 'Generating...'
-                        : '🎙️ Add to Podcast'}
-                    </button>
-                  )}
-
-                  <a
-                    href={paper.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="external-link"
-                  >
-                    Source
-                  </a>
                 </td>
               </tr>
             ))}
