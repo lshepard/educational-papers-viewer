@@ -20,11 +20,12 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import google.generativeai as genai
+import google.generativeai as genai_old  # For PDF upload
+from google import genai  # For native audio TTS
+from google.genai import types
 from supabase import create_client, Client
 import fitz  # PyMuPDF
 from PIL import Image
-from google.cloud import texttospeech
 
 # Load environment variables
 load_dotenv()
@@ -46,7 +47,7 @@ if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY]):
     raise ValueError("Missing required environment variables")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
+genai_old.configure(api_key=GEMINI_API_KEY)
 
 
 @asynccontextmanager
@@ -56,33 +57,26 @@ async def lifespan(app: FastAPI):
     logger.info("Gemini API configured")
     logger.info("Supabase client initialized")
 
-    # Check Google Cloud Text-to-Speech credentials
+    # Check Gemini native audio capabilities
     try:
-        logger.info("Checking Google Cloud Text-to-Speech credentials...")
-        tts_client = texttospeech.TextToSpeechClient()
-        # Try to list voices to verify API access
-        voices = tts_client.list_voices(language_code="en-US")
-        logger.info(f"✅ Google Cloud TTS configured successfully ({len(voices.voices)} voices available)")
+        logger.info("Checking Gemini native audio capabilities...")
+        # Initialize genai client
+        genai_client = genai.Client(api_key=GEMINI_API_KEY)
+        app.state.genai_client = genai_client
+        logger.info("✅ Gemini 2.5 Pro TTS configured successfully")
         app.state.tts_available = True
     except Exception as e:
         logger.error("=" * 80)
-        logger.error("❌ GOOGLE CLOUD TEXT-TO-SPEECH NOT CONFIGURED")
+        logger.error("❌ GEMINI TTS NOT CONFIGURED")
         logger.error("=" * 80)
         logger.error(f"Error: {e}")
         logger.error("")
         logger.error("Podcast generation will NOT be available.")
-        logger.error("")
-        logger.error("To fix this, set up Google Cloud credentials:")
-        logger.error("  Local dev:  gcloud auth application-default login")
-        logger.error("  Production: Set GOOGLE_APPLICATION_CREDENTIALS environment variable")
-        logger.error("")
-        logger.error("For more info: https://cloud.google.com/docs/authentication/external/set-up-adc")
         logger.error("=" * 80)
 
         # Fail to start if TTS is not configured
         raise RuntimeError(
-            "Google Cloud Text-to-Speech credentials not configured. "
-            "Run 'gcloud auth application-default login' or set GOOGLE_APPLICATION_CREDENTIALS. "
+            "Gemini TTS not configured. Check GEMINI_API_KEY. "
             "See logs above for details."
         )
 
@@ -567,7 +561,7 @@ async def health_check():
             "services": {
                 "supabase": "connected",
                 "gemini": "configured",
-                "google_tts": "configured" if getattr(app.state, 'tts_available', False) else "not configured"
+                "gemini_tts": "configured" if getattr(app.state, 'tts_available', False) else "not configured"
             }
         }
     except Exception as e:
@@ -903,7 +897,7 @@ async def generate_podcast(request: PodcastGenerationRequest):
 
         # Upload to Gemini
         logger.info("Uploading PDF to Gemini...")
-        gemini_file = genai.upload_file(temp_file_path)
+        gemini_file = genai_old.upload_file(temp_file_path)
         logger.info(f"File uploaded to Gemini: {gemini_file.name}")
 
         # Generate podcast script using Gemini
@@ -917,7 +911,7 @@ Create an engaging, conversational podcast discussion between two hosts about th
 The podcast should:
 - Be lighthearted and fun, but informative
 - Discuss key findings, methodology, and real-world implications
-- Use natural, conversational language (including "um", "like", pauses)
+- Use natural, conversational language - NO "um", "like", or filler words (the TTS will add natural pauses)
 - Be about 3-5 minutes when spoken (roughly 450-750 words)
 - Make complex topics accessible and engaging
 
@@ -929,101 +923,62 @@ Alex: [continues conversation]
 
 Focus on making the content digestible and interesting for casual listeners."""
 
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai_old.GenerativeModel("gemini-2.5-pro-preview")
         script_response = model.generate_content([gemini_file, script_prompt])
         script_text = script_response.text
 
         logger.info(f"Generated script ({len(script_text)} characters)")
         logger.debug(f"Script preview: {script_text[:200]}...")
 
-        # Parse script into speaker segments
-        logger.info("Parsing script into speaker segments...")
-        segments = []
-        current_speaker = None
-        current_text = []
+        # Generate audio using Gemini 2.5 Pro native TTS
+        logger.info("Generating audio with Gemini 2.5 Pro native TTS...")
 
-        for line in script_text.split('\n'):
-            line = line.strip()
-            if not line:
-                continue
+        # Get the genai client from app state
+        genai_client = app.state.genai_client
 
-            # Check if line starts with "Alex:" or "Sam:"
-            if line.startswith('Alex:'):
-                if current_speaker and current_text:
-                    segments.append((current_speaker, ' '.join(current_text)))
-                current_speaker = 'Alex'
-                current_text = [line[5:].strip()]
-            elif line.startswith('Sam:'):
-                if current_speaker and current_text:
-                    segments.append((current_speaker, ' '.join(current_text)))
-                current_speaker = 'Sam'
-                current_text = [line[4:].strip()]
-            elif current_speaker:
-                current_text.append(line)
-
-        # Add final segment
-        if current_speaker and current_text:
-            segments.append((current_speaker, ' '.join(current_text)))
-
-        logger.info(f"Parsed {len(segments)} segments from script")
-
-        # Generate audio using Google Cloud Text-to-Speech with multiple voices
-        logger.info("Generating audio with Google Cloud TTS...")
-
-        # Initialize TTS client
-        tts_client = texttospeech.TextToSpeechClient()
-
-        # Define voices for each speaker
-        voices = {
-            'Alex': {
-                'name': 'en-US-Neural2-J',  # Male voice, energetic
-                'gender': texttospeech.SsmlVoiceGender.MALE
-            },
-            'Sam': {
-                'name': 'en-US-Neural2-F',  # Female voice, clear
-                'gender': texttospeech.SsmlVoiceGender.FEMALE
-            }
-        }
-
-        # Generate audio for each segment and combine
-        audio_segments = []
-
-        for speaker, text in segments:
-            # Build SSML with proper voice tags
-            ssml = f"""<speak>
-                <prosody rate="medium" pitch="0st">
-                    {text}
-                </prosody>
-            </speak>"""
-
-            # Configure the voice
-            voice = texttospeech.VoiceSelectionParams(
-                language_code='en-US',
-                name=voices[speaker]['name'],
-                ssml_gender=voices[speaker]['gender']
+        # Generate audio with multi-speaker configuration
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-pro-preview-tts",
+            contents=script_text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                        speaker_voice_configs=[
+                            types.SpeakerVoiceConfig(
+                                speaker='Alex',
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name='Kore',  # Firm, conversational
+                                    )
+                                )
+                            ),
+                            types.SpeakerVoiceConfig(
+                                speaker='Sam',
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name='Puck',  # Upbeat, engaging
+                                    )
+                                )
+                            ),
+                        ]
+                    )
+                ),
             )
+        )
 
-            # Configure audio output
-            audio_config = texttospeech.AudioConfig(
-                audio_encoding=texttospeech.AudioEncoding.MP3,
-                speaking_rate=1.0,
-                pitch=0.0
-            )
+        # Extract audio data from response
+        audio_data = None
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    audio_data = part.inline_data.data
+                    break
 
-            # Synthesize speech
-            synthesis_input = texttospeech.SynthesisInput(ssml=ssml)
-            response = tts_client.synthesize_speech(
-                input=synthesis_input,
-                voice=voice,
-                audio_config=audio_config
-            )
+        if not audio_data:
+            raise HTTPException(status_code=500, detail="No audio data in Gemini response")
 
-            audio_segments.append(response.audio_content)
-            logger.debug(f"Generated audio for {speaker}: {len(response.audio_content)} bytes")
-
-        # Combine all audio segments
-        audio_data = b''.join(audio_segments)
-        logger.info(f"Combined audio generated, total size: {len(audio_data)} bytes")
+        logger.info(f"Audio generated, size: {len(audio_data)} bytes")
 
         # Upload audio to Supabase storage
         filename = f"{episode_id}.mp3"
@@ -1050,10 +1005,11 @@ Focus on making the content digestible and interesting for casual listeners."""
         if paper.get('year'):
             episode_description += f" ({paper['year']})"
 
-        # Update episode record
+        # Update episode record with script and audio
         supabase.table("podcast_episodes").update({
             "title": episode_title,
             "description": episode_description,
+            "script": script_text,  # Save the generated script
             "storage_path": storage_path,
             "audio_url": public_url,
             "generation_status": "completed"
@@ -1097,6 +1053,195 @@ Focus on making the content digestible and interesting for casual listeners."""
                 logger.warning(f"Could not delete Gemini file: {e}")
 
 
+
+
+@app.post("/podcast/episodes/{episode_id}/regenerate")
+async def regenerate_podcast_audio(episode_id: str):
+    """
+    Regenerate audio from an existing script.
+
+    This allows you to regenerate the audio without re-analyzing the paper
+    or regenerating the script. Useful after editing the script.
+    """
+    try:
+        logger.info(f"Regenerating audio for episode: {episode_id}")
+
+        # Fetch episode
+        episode_response = supabase.table("podcast_episodes").select("*").eq("id", episode_id).single().execute()
+        episode = episode_response.data
+
+        if not episode:
+            raise HTTPException(status_code=404, detail="Episode not found")
+
+        script_text = episode.get("script")
+        if not script_text:
+            raise HTTPException(status_code=400, detail="Episode has no script to regenerate from")
+
+        # Update status
+        supabase.table("podcast_episodes").update({
+            "generation_status": "processing"
+        }).eq("id", episode_id).execute()
+
+        # Generate audio using Gemini 2.5 Pro native TTS
+        logger.info("Generating audio with Gemini 2.5 Pro native TTS...")
+        genai_client = app.state.genai_client
+
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-pro-preview-tts",
+            contents=script_text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                        speaker_voice_configs=[
+                            types.SpeakerVoiceConfig(
+                                speaker='Alex',
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name='Kore',
+                                    )
+                                )
+                            ),
+                            types.SpeakerVoiceConfig(
+                                speaker='Sam',
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name='Puck',
+                                    )
+                                )
+                            ),
+                        ]
+                    )
+                ),
+            )
+        )
+
+        # Extract audio data
+        audio_data = None
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    audio_data = part.inline_data.data
+                    break
+
+        if not audio_data:
+            raise HTTPException(status_code=500, detail="No audio data in Gemini response")
+
+        # Upload to storage
+        paper_id = episode["paper_id"]
+        filename = f"{episode_id}.mp3"
+        storage_path = f"{paper_id}/{filename}"
+
+        supabase.storage.from_("episodes").upload(
+            path=storage_path,
+            file=audio_data,
+            file_options={
+                "content-type": "audio/mpeg",
+                "upsert": "true"
+            }
+        )
+
+        public_url = supabase.storage.from_("episodes").get_public_url(storage_path)
+
+        # Update episode
+        supabase.table("podcast_episodes").update({
+            "storage_path": storage_path,
+            "audio_url": public_url,
+            "generation_status": "completed"
+        }).eq("id", episode_id).execute()
+
+        return {
+            "success": True,
+            "episode_id": episode_id,
+            "audio_url": public_url,
+            "message": "Audio regenerated successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to regenerate audio: {e}", exc_info=True)
+        supabase.table("podcast_episodes").update({
+            "generation_status": "failed",
+            "generation_error": str(e)
+        }).eq("id", episode_id).execute()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/podcast/episodes")
+async def list_podcast_episodes():
+    """List all podcast episodes."""
+    try:
+        response = supabase.table("podcast_episodes").select("*").order("created_at", desc=True).execute()
+        return {
+            "success": True,
+            "episodes": response.data
+        }
+    except Exception as e:
+        logger.error(f"Failed to list episodes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/podcast/episodes/{episode_id}")
+async def get_podcast_episode(episode_id: str):
+    """Get a single podcast episode."""
+    try:
+        response = supabase.table("podcast_episodes").select("*").eq("id", episode_id).single().execute()
+        return {
+            "success": True,
+            "episode": response.data
+        }
+    except Exception as e:
+        logger.error(f"Failed to get episode: {e}")
+        raise HTTPException(status_code=404, detail="Episode not found")
+
+
+@app.put("/podcast/episodes/{episode_id}")
+async def update_podcast_episode(episode_id: str, updates: dict):
+    """
+    Update a podcast episode.
+
+    Allows editing the script, title, description, etc.
+    After editing the script, use /regenerate to create new audio.
+    """
+    try:
+        # Validate that we're not updating restricted fields
+        restricted_fields = ["id", "paper_id", "created_at", "audio_url", "storage_path"]
+        for field in restricted_fields:
+            if field in updates:
+                del updates[field]
+
+        response = supabase.table("podcast_episodes").update(updates).eq("id", episode_id).execute()
+        return {
+            "success": True,
+            "episode": response.data[0] if response.data else None
+        }
+    except Exception as e:
+        logger.error(f"Failed to update episode: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/podcast/episodes/{episode_id}")
+async def delete_podcast_episode(episode_id: str):
+    """Delete a podcast episode."""
+    try:
+        # Delete from storage first
+        episode_response = supabase.table("podcast_episodes").select("storage_path").eq("id", episode_id).single().execute()
+        if episode_response.data and episode_response.data.get("storage_path"):
+            try:
+                supabase.storage.from_("episodes").remove([episode_response.data["storage_path"]])
+            except Exception as e:
+                logger.warning(f"Failed to delete audio file: {e}")
+
+        # Delete from database
+        supabase.table("podcast_episodes").delete().eq("id", episode_id).execute()
+        return {
+            "success": True,
+            "message": "Episode deleted successfully"
+        }
+    except Exception as e:
+        logger.error(f"Failed to delete episode: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/podcast/feed.xml")

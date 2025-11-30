@@ -44,6 +44,14 @@ const AdminDashboard: React.FC = () => {
             Go to Processing
           </Link>
         </div>
+
+        <div className="admin-card">
+          <h2>Podcast Manager</h2>
+          <p>View, edit, and regenerate podcast episodes</p>
+          <Link to="/admin/podcast-manager" className="admin-card-button">
+            Manage Podcasts
+          </Link>
+        </div>
       </div>
     </div>
   )
