@@ -6,7 +6,7 @@ import CustomEpisodeCreator from './CustomEpisodeCreator'
 
 interface PodcastEpisode {
   id: string
-  paper_id: string
+  paper_id: string | null
   title: string
   description: string | null
   script: string | null
@@ -15,6 +15,7 @@ interface PodcastEpisode {
   generation_error: string | null
   published_at: string
   created_at: string
+  is_multi_paper: boolean | null
 }
 
 const PodcastManager: React.FC = () => {
@@ -252,13 +253,15 @@ const PodcastManager: React.FC = () => {
                             {regenerating === episode.id ? 'Regenerating...' : '🔄 Regenerate Audio'}
                           </button>
                         )}
-                        <button
-                          onClick={() => handleRegenerateFromPaper(episode.id)}
-                          disabled={regenerating === episode.id || regeneratingFromPaper === episode.id}
-                          className="regenerate-from-paper-btn"
-                        >
-                          {regeneratingFromPaper === episode.id ? 'Regenerating...' : '🔄 Regenerate from Paper'}
-                        </button>
+                        {!episode.is_multi_paper && (
+                          <button
+                            onClick={() => handleRegenerateFromPaper(episode.id)}
+                            disabled={regenerating === episode.id || regeneratingFromPaper === episode.id}
+                            className="regenerate-from-paper-btn"
+                          >
+                            {regeneratingFromPaper === episode.id ? 'Regenerating...' : '🔄 Regenerate from Paper'}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(episode.id)}
                           className="delete-btn"

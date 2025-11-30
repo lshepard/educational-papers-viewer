@@ -699,7 +699,20 @@ async def regenerate_podcast_from_paper(episode_id: str):
     if not episode:
         raise HTTPException(status_code=404, detail="Episode not found")
 
+    # Check if this is a multi-paper episode
+    if episode.get("is_multi_paper"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot regenerate multi-paper episodes from paper. Use 'Regenerate Audio' to regenerate from the existing script."
+        )
+
     paper_id = episode["paper_id"]
+
+    if not paper_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Episode has no associated paper"
+        )
 
     # Call shared generation function with existing episode_id
     result = await _generate_podcast_from_paper(paper_id=paper_id, episode_id=episode_id)
