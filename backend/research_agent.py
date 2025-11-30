@@ -37,7 +37,20 @@ class PaperResearchAgent:
     def semantic_scholar(self) -> SemanticScholar:
         """Lazy initialization of SemanticScholar to avoid uvloop conflicts."""
         if self._semantic_scholar is None:
-            self._semantic_scholar = SemanticScholar()
+            # Prevent nest_asyncio from patching the loop when using uvloop
+            import sys
+            import nest_asyncio
+
+            # Temporarily disable nest_asyncio.apply() to prevent uvloop conflict
+            original_apply = nest_asyncio.apply
+            nest_asyncio.apply = lambda loop=None: None
+
+            try:
+                self._semantic_scholar = SemanticScholar()
+            finally:
+                # Restore original function
+                nest_asyncio.apply = original_apply
+
         return self._semantic_scholar
 
     def search_paper_on_semantic_scholar(self, title: str, authors: Optional[str] = None) -> Dict[str, Any]:
