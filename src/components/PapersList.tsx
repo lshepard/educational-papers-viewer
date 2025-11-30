@@ -2,12 +2,21 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { GenaiPaper } from '../supabase'
 import { PapersService } from '../services/papersService'
 import { PodcastService } from '../services/podcastService'
+import { useAuth } from '../contexts/AuthContext'
 
 interface PapersListProps {
   onSelectPaper: (paper: GenaiPaper) => void
 }
 
+interface PodcastEpisode {
+  id: string
+  paper_id: string
+  audio_url: string | null
+  generation_status: 'pending' | 'processing' | 'completed' | 'failed'
+}
+
 const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
+  const { user } = useAuth()
   const [papers, setPapers] = useState<GenaiPaper[]>([])
   const [filteredPapers, setFilteredPapers] = useState<GenaiPaper[]>([])
   const [loading, setLoading] = useState(true)
@@ -17,9 +26,11 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
   const [yearFilter, setYearFilter] = useState<string>('')
   const [generatingPodcast, setGeneratingPodcast] = useState<Record<string, boolean>>({})
   const [podcastStatus, setPodcastStatus] = useState<Record<string, string>>({})
+  const [podcastEpisodes, setPodcastEpisodes] = useState<Record<string, PodcastEpisode>>({})
 
   useEffect(() => {
     fetchPapers()
+    fetchPodcastEpisodes()
   }, [])
 
   const fetchPapers = async () => {
@@ -30,6 +41,25 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
       setError(err instanceof Error ? err.message : 'Failed to fetch papers')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchPodcastEpisodes = async () => {
+    try {
+      const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
+      const response = await fetch(`${BACKEND_URL}/podcast/episodes`)
+      const data = await response.json()
+
+      if (data.success && data.episodes) {
+        // Create a map of paper_id -> episode for quick lookup
+        const episodesMap: Record<string, PodcastEpisode> = {}
+        data.episodes.forEach((episode: PodcastEpisode) => {
+          episodesMap[episode.paper_id] = episode
+        })
+        setPodcastEpisodes(episodesMap)
+      }
+    } catch (err) {
+      console.error('Failed to fetch podcast episodes:', err)
     }
   }
 
@@ -82,6 +112,9 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
 
       // Success!
       setPodcastStatus(prev => ({ ...prev, [paperId]: 'Completed!' }))
+
+      // Refresh podcast episodes list
+      await fetchPodcastEpisodes()
 
       // Open audio in new tab
       if (response.audio_url) {
@@ -185,16 +218,48 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
                   >
                     {paper.file_kind === 'pdf' ? 'View PDF' : paper.file_kind === 'markdown' ? 'View Markdown' : 'View'}
                   </button>
-                  <button
-                    onClick={() => handleGeneratePodcast(paper.id)}
-                    className="podcast-btn"
-                    disabled={generatingPodcast[paper.id] || paper.file_kind !== 'pdf'}
-                    title={paper.file_kind !== 'pdf' ? 'Only PDF papers can be converted to podcasts' : 'Generate podcast episode'}
-                  >
-                    {generatingPodcast[paper.id]
-                      ? podcastStatus[paper.id] || 'Generating...'
-                      : 'Add to Podcast'}
-                  </button>
+
+                  {/* Show podcast link if episode exists and is completed */}
+                  {podcastEpisodes[paper.id]?.generation_status === 'completed' && podcastEpisodes[paper.id]?.audio_url && (
+                    <a
+                      href={podcastEpisodes[paper.id].audio_url!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="podcast-link"
+                      title="Listen to podcast episode"
+                    >
+                      🎧 Podcast
+                    </a>
+                  )}
+
+                  {/* Show processing status if generating */}
+                  {podcastEpisodes[paper.id]?.generation_status === 'processing' && (
+                    <span className="podcast-status processing">
+                      ⏳ Generating...
+                    </span>
+                  )}
+
+                  {/* Show failed status if failed */}
+                  {podcastEpisodes[paper.id]?.generation_status === 'failed' && user && (
+                    <span className="podcast-status failed" title="Podcast generation failed">
+                      ❌ Failed
+                    </span>
+                  )}
+
+                  {/* Show "Add to Podcast" button only if: logged in as admin, no podcast exists, and is PDF */}
+                  {user && !podcastEpisodes[paper.id] && paper.file_kind === 'pdf' && (
+                    <button
+                      onClick={() => handleGeneratePodcast(paper.id)}
+                      className="podcast-btn"
+                      disabled={generatingPodcast[paper.id]}
+                      title="Generate podcast episode"
+                    >
+                      {generatingPodcast[paper.id]
+                        ? podcastStatus[paper.id] || 'Generating...'
+                        : '🎙️ Add to Podcast'}
+                    </button>
+                  )}
+
                   <a
                     href={paper.source_url}
                     target="_blank"
