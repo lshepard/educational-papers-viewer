@@ -12,6 +12,7 @@ import httpx
 from typing import Dict, Any, List
 from datetime import datetime
 from google import genai
+from google.genai import types
 from supabase import Client
 
 from .storage import upload_audio_to_storage, get_public_url
