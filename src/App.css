@@ -878,26 +878,35 @@ body {
   .papers-table-container {
     overflow-x: auto;
   }
-  
+
   .papers-table {
-    min-width: 800px;
+    min-width: auto;
     font-size: 0.85rem;
   }
-  
+
   .papers-table th,
   .papers-table td {
     padding: 0.5rem 0.25rem;
   }
-  
+
+  /* Hide Year, Venue, and Type columns on mobile */
+  .papers-table th:nth-child(3),
+  .papers-table td.paper-year,
+  .papers-table th:nth-child(4),
+  .papers-table td.paper-venue,
+  .papers-table th:nth-child(6),
+  .papers-table td.paper-type {
+    display: none;
+  }
+
   .paper-title {
     max-width: 250px;
   }
-  
+
   .paper-authors {
     max-width: 150px;
   }
-  
-  .paper-venue,
+
   .paper-application {
     max-width: 100px;
   }
