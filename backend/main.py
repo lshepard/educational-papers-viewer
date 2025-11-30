@@ -1405,4 +1405,6 @@ async def get_podcast_feed():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    # Use multiple workers for concurrent request handling (especially during long podcast generation)
+    # Note: When using workers > 1, the app will be loaded in each worker process
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="info", workers=4)
