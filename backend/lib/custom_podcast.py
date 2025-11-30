@@ -37,14 +37,22 @@ async def fetch_paper_content(paper: Dict[str, Any], supabase: Client) -> Dict[s
         response = supabase.table("papers").select("*").eq("id", paper["id"]).single().execute()
         paper_data = response.data
 
+        # Extract summary from markdown if available (first few paragraphs)
+        markdown = paper_data.get("markdown", "")
+        summary = ""
+        if markdown:
+            # Get first 500 characters of markdown as summary
+            summary = markdown[:500] + "..." if len(markdown) > 500 else markdown
+
         return {
             "title": paper_data.get("title", ""),
             "authors": paper_data.get("authors", ""),
             "year": paper_data.get("year"),
-            "abstract": paper_data.get("abstract", ""),
+            "abstract": summary,
             "venue": paper_data.get("venue", ""),
-            "key_findings": paper_data.get("key_findings", ""),
-            "methodology": paper_data.get("methodology", "")
+            "application": paper_data.get("application", ""),
+            "why": paper_data.get("why", ""),
+            "study_design": paper_data.get("study_design", "")
         }
 
     elif paper["source"] == "semantic-scholar":
@@ -117,11 +125,14 @@ def format_paper_for_prompt(paper_content: Dict[str, Any]) -> str:
     if paper_content.get("abstract"):
         parts.append(f"\nAbstract: {paper_content['abstract']}")
 
-    if paper_content.get("key_findings"):
-        parts.append(f"\nKey Findings: {paper_content['key_findings']}")
+    if paper_content.get("application"):
+        parts.append(f"\nApplication: {paper_content['application']}")
 
-    if paper_content.get("methodology"):
-        parts.append(f"\nMethodology: {paper_content['methodology']}")
+    if paper_content.get("why"):
+        parts.append(f"\nPurpose: {paper_content['why']}")
+
+    if paper_content.get("study_design"):
+        parts.append(f"\nStudy Design: {paper_content['study_design']}")
 
     return "\n".join(parts)
 

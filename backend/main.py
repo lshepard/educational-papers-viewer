@@ -837,7 +837,7 @@ async def get_podcast_feed():
 async def search_papers(q: str):
     """
     Search papers in the database by theme/keywords.
-    Searches across title, authors, abstract, and other fields.
+    Searches across title, authors, application, venue, and why fields.
     """
     try:
         search_term = f"%{q}%"
@@ -845,9 +845,9 @@ async def search_papers(q: str):
         response = supabase.table("papers").select("*").or_(
             f"title.ilike.{search_term},"
             f"authors.ilike.{search_term},"
-            f"abstract.ilike.{search_term},"
             f"application.ilike.{search_term},"
-            f"venue.ilike.{search_term}"
+            f"venue.ilike.{search_term},"
+            f"why.ilike.{search_term}"
         ).limit(50).execute()
 
         return {
