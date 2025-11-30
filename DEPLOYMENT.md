@@ -22,13 +22,25 @@ With this configuration:
 Deploy backend on a different domain:
 
 ```bash
-# .env.production
+# Frontend .env.production
 REACT_APP_BACKEND_URL="https://api.yourdomain.com"
+```
+
+```bash
+# Backend .env
+ALLOW_ALL_ORIGINS=true  # Allow requests from any domain
+# OR set specific frontend URL:
+# FRONTEND_URL="https://papers.yourdomain.com"
+# ALLOW_ALL_ORIGINS=false
 ```
 
 With this configuration:
 - Frontend: `https://papers.yourdomain.com`
 - Backend: `https://api.yourdomain.com/podcast/generate`
+
+**CORS Options:**
+- `ALLOW_ALL_ORIGINS=true`: Accept requests from any domain (simple, less secure)
+- `ALLOW_ALL_ORIGINS=false`: Only accept requests from `FRONTEND_URL` and `localhost:3000` (more secure)
 
 #### 3. Local Development
 ```bash
@@ -86,6 +98,7 @@ docker run -p 8000:8000 \
   -e SUPABASE_SERVICE_KEY="your-service-role-key" \
   -e GEMINI_API_KEY="your-gemini-api-key" \
   -e FRONTEND_URL="https://papers.yourdomain.com" \
+  -e ALLOW_ALL_ORIGINS="true" \
   papers-backend
 ```
 
@@ -93,7 +106,12 @@ docker run -p 8000:8000 \
 - `SUPABASE_URL`: Your Supabase project URL
 - `SUPABASE_SERVICE_KEY`: Supabase service role key (not anon key!)
 - `GEMINI_API_KEY`: Google Gemini API key for AI features
-- `FRONTEND_URL`: Frontend URL for CORS (optional, defaults to localhost:3000)
+
+#### Optional Environment Variables
+- `FRONTEND_URL`: Frontend URL for CORS (defaults to localhost:3000)
+- `ALLOW_ALL_ORIGINS`: Set to `true` to accept requests from any domain (defaults to `false`)
+  - `true`: Allows requests from any domain (useful for separate domain deployment)
+  - `false`: Only allows requests from `FRONTEND_URL` and localhost:3000 (more secure)
 
 See `backend/.env.example` for additional optional variables like Google Cloud credentials.
 

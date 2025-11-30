@@ -44,6 +44,10 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+# CORS configuration
+# Set ALLOW_ALL_ORIGINS=true to accept requests from any domain (useful for separate domain deployment)
+ALLOW_ALL_ORIGINS = os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true"
+
 if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY]):
     raise ValueError("Missing required environment variables")
 
@@ -131,18 +135,30 @@ app = FastAPI(
 )
 
 # Add CORS middleware
-# Allow both localhost and production frontend
-allowed_origins = [
-    "http://localhost:3000",
-    FRONTEND_URL
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if ALLOW_ALL_ORIGINS:
+    # Allow all origins - useful for separate domain deployment
+    logger.info("CORS: Allowing all origins")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,  # Must be False when allowing all origins
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Allow specific origins only (more secure for production)
+    allowed_origins = [
+        "http://localhost:3000",
+        FRONTEND_URL
+    ]
+    logger.info(f"CORS: Allowing specific origins: {allowed_origins}")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 class ExtractionRequest(BaseModel):
