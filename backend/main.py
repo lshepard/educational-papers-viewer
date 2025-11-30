@@ -486,9 +486,8 @@ Extract these sections if present:
 
 Include the COMPLETE text content for each section. For Methods, extract every detail about the methodology.
 """
-    
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-pro",
+        model_name="gemini-3-pro-preview",
         generation_config={
             "response_mime_type": "application/json",
             "response_schema": PaperSections
@@ -823,44 +822,40 @@ async def extract_paper_content(request: ExtractionRequest):
                 logger.warning(f"Could not delete Gemini file: {e}")
 
 
-@app.post("/podcast/generate", response_model=PodcastGenerationResponse)
-async def generate_podcast(request: PodcastGenerationRequest):
+async def _generate_podcast_from_paper(paper_id: str, episode_id: str = None) -> dict:
     """
-    Generate a podcast episode from a research paper using Gemini AI.
+    Internal function to generate a podcast from a paper.
 
-    This endpoint:
-    1. Fetches the paper PDF from Supabase
-    2. Uploads PDF to Gemini
-    3. Generates a NotebookLM-style podcast script with two hosts
-    4. Uses Google Cloud TTS to generate multi-speaker audio
-    5. Stores the audio in Supabase storage
-    6. Returns the episode with audio URL
+    Args:
+        paper_id: ID of the paper to generate podcast for
+        episode_id: Optional existing episode ID (for regeneration). If None, creates new episode.
 
-    The generation happens synchronously and may take 2-5 minutes.
+    Returns:
+        dict with success, episode_id, audio_url, and message
     """
-    # Check if TTS is available (should always be true if server started successfully)
-    if not getattr(app.state, 'tts_available', False):
-        raise HTTPException(
-            status_code=503,
-            detail="Podcast generation is not available - Google Cloud TTS not configured"
-        )
-
-    paper_id = request.paper_id
     temp_file_path = None
     gemini_file = None
 
     try:
-        logger.info(f"Starting podcast generation for paper: {paper_id}")
+        logger.info(f"Generating podcast for paper: {paper_id}")
 
-        # Update database to track progress
-        episode_data = {
-            "paper_id": paper_id,
-            "title": "Generating...",
-            "description": "Podcast is being generated",
-            "generation_status": "processing"
-        }
-        episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
-        episode_id = episode_response.data[0]["id"]
+        # Create or update episode record
+        if episode_id is None:
+            # Create new episode
+            episode_data = {
+                "paper_id": paper_id,
+                "title": "Generating...",
+                "description": "Podcast is being generated",
+                "generation_status": "processing"
+            }
+            episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
+            episode_id = episode_response.data[0]["id"]
+        else:
+            # Update existing episode
+            supabase.table("podcast_episodes").update({
+                "generation_status": "processing",
+                "generation_error": None
+            }).eq("id", episode_id).execute()
 
         # Fetch paper details
         paper_response = supabase.table("papers").select("*").eq("id", paper_id).single().execute()
@@ -923,7 +918,7 @@ Alex: [continues conversation]
 
 Focus on making the content digestible and interesting for casual listeners."""
 
-        model = genai_old.GenerativeModel("gemini-2.5-pro-preview")
+        model = genai_old.GenerativeModel("gemini-3-pro-preview")
         script_response = model.generate_content([gemini_file, script_prompt])
         script_text = script_response.text
 
@@ -982,11 +977,11 @@ Focus on making the content digestible and interesting for casual listeners."""
 
         # Upload audio to Supabase storage
         filename = f"{episode_id}.mp3"
-        storage_path = f"{paper_id}/{filename}"
+        storage_path_audio = f"{paper_id}/{filename}"
 
-        logger.info(f"Uploading audio to storage: episodes/{storage_path}")
+        logger.info(f"Uploading audio to storage: episodes/{storage_path_audio}")
         supabase.storage.from_("episodes").upload(
-            path=storage_path,
+            path=storage_path_audio,
             file=audio_data,
             file_options={
                 "content-type": "audio/mpeg",
@@ -995,7 +990,7 @@ Focus on making the content digestible and interesting for casual listeners."""
         )
 
         # Get public URL
-        public_url = supabase.storage.from_("episodes").get_public_url(storage_path)
+        public_url = supabase.storage.from_("episodes").get_public_url(storage_path_audio)
 
         # Create episode metadata
         episode_title = f"Discussion: {paper.get('title', 'Untitled Paper')}"
@@ -1010,19 +1005,20 @@ Focus on making the content digestible and interesting for casual listeners."""
             "title": episode_title,
             "description": episode_description,
             "script": script_text,  # Save the generated script
-            "storage_path": storage_path,
+            "storage_path": storage_path_audio,
             "audio_url": public_url,
-            "generation_status": "completed"
+            "generation_status": "completed",
+            "generation_error": None
         }).eq("id", episode_id).execute()
 
         logger.info(f"Podcast generation completed: {episode_id}")
 
-        return PodcastGenerationResponse(
-            success=True,
-            episode_id=episode_id,
-            audio_url=public_url,
-            message="Podcast generated successfully!"
-        )
+        return {
+            "success": True,
+            "episode_id": episode_id,
+            "audio_url": public_url,
+            "message": "Podcast generated successfully!"
+        }
 
     except HTTPException:
         raise
@@ -1030,7 +1026,7 @@ Focus on making the content digestible and interesting for casual listeners."""
         logger.error(f"Failed to generate podcast: {e}", exc_info=True)
 
         # Update episode status to failed if we have an episode_id
-        if 'episode_id' in locals():
+        if episode_id:
             supabase.table("podcast_episodes").update({
                 "generation_status": "failed",
                 "generation_error": str(e)
@@ -1051,6 +1047,32 @@ Focus on making the content digestible and interesting for casual listeners."""
                 gemini_file.delete()
             except Exception as e:
                 logger.warning(f"Could not delete Gemini file: {e}")
+
+
+@app.post("/podcast/generate", response_model=PodcastGenerationResponse)
+async def generate_podcast(request: PodcastGenerationRequest):
+    """
+    Generate a podcast episode from a research paper using Gemini AI.
+
+    This endpoint:
+    1. Fetches the paper PDF from Supabase
+    2. Uploads PDF to Gemini
+    3. Generates a NotebookLM-style podcast script with two hosts
+    4. Uses Google Cloud TTS to generate multi-speaker audio
+    5. Stores the audio in Supabase storage
+    6. Returns the episode with audio URL
+
+    The generation happens synchronously and may take 2-5 minutes.
+    """
+    # Check if TTS is available (should always be true if server started successfully)
+    if not getattr(app.state, 'tts_available', False):
+        raise HTTPException(
+            status_code=503,
+            detail="Podcast generation is not available - Google Cloud TTS not configured"
+        )
+
+    result = await _generate_podcast_from_paper(paper_id=request.paper_id)
+    return PodcastGenerationResponse(**result)
 
 
 
@@ -1166,6 +1188,31 @@ async def regenerate_podcast_audio(episode_id: str):
             "generation_error": str(e)
         }).eq("id", episode_id).execute()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/podcast/episodes/{episode_id}/regenerate-from-paper")
+async def regenerate_podcast_from_paper(episode_id: str):
+    """
+    Regenerate the entire podcast (script + audio) from the original paper.
+
+    This is useful for:
+    - Retrying failed episodes
+    - Getting a fresh generation with updated models
+    - Starting over from scratch
+    """
+    # Fetch episode to get paper_id
+    episode_response = supabase.table("podcast_episodes").select("*").eq("id", episode_id).single().execute()
+    episode = episode_response.data
+
+    if not episode:
+        raise HTTPException(status_code=404, detail="Episode not found")
+
+    paper_id = episode["paper_id"]
+
+    # Call shared generation function with existing episode_id
+    result = await _generate_podcast_from_paper(paper_id=paper_id, episode_id=episode_id)
+    result["message"] = "Podcast regenerated from paper successfully!"
+    return result
 
 
 @app.get("/podcast/episodes")

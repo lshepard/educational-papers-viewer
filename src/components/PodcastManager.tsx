@@ -25,6 +25,7 @@ const PodcastManager: React.FC = () => {
   const [editingEpisode, setEditingEpisode] = useState<PodcastEpisode | null>(null)
   const [editedScript, setEditedScript] = useState('')
   const [regenerating, setRegenerating] = useState<string | null>(null)
+  const [regeneratingFromPaper, setRegeneratingFromPaper] = useState<string | null>(null)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -94,6 +95,33 @@ const PodcastManager: React.FC = () => {
       alert('Failed to regenerate audio')
     } finally {
       setRegenerating(null)
+    }
+  }
+
+  const handleRegenerateFromPaper = async (episodeId: string) => {
+    if (!window.confirm('Regenerate the entire podcast (script + audio) from the original paper? This will take 3-5 minutes.')) return
+
+    setRegeneratingFromPaper(episodeId)
+    try {
+      const response = await fetch(`${BACKEND_URL}/podcast/episodes/${episodeId}/regenerate-from-paper`, {
+        method: 'POST'
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        alert('Podcast regenerated from paper successfully!')
+        fetchEpisodes()
+        if (data.audio_url) {
+          window.open(data.audio_url, '_blank')
+        }
+      } else {
+        alert('Failed to regenerate: ' + (data.message || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Failed to regenerate from paper:', error)
+      alert('Failed to regenerate from paper')
+    } finally {
+      setRegeneratingFromPaper(null)
     }
   }
 
@@ -215,12 +243,19 @@ const PodcastManager: React.FC = () => {
                         {episode.script && episode.generation_status === 'completed' && (
                           <button
                             onClick={() => handleRegenerateAudio(episode.id)}
-                            disabled={regenerating === episode.id}
+                            disabled={regenerating === episode.id || regeneratingFromPaper === episode.id}
                             className="regenerate-btn"
                           >
                             {regenerating === episode.id ? 'Regenerating...' : '🔄 Regenerate Audio'}
                           </button>
                         )}
+                        <button
+                          onClick={() => handleRegenerateFromPaper(episode.id)}
+                          disabled={regenerating === episode.id || regeneratingFromPaper === episode.id}
+                          className="regenerate-from-paper-btn"
+                        >
+                          {regeneratingFromPaper === episode.id ? 'Regenerating...' : '🔄 Regenerate from Paper'}
+                        </button>
                         <button
                           onClick={() => handleDelete(episode.id)}
                           className="delete-btn"
@@ -343,6 +378,16 @@ const PodcastManager: React.FC = () => {
         }
 
         .regenerate-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .regenerate-from-paper-btn {
+          background: #6f42c1;
+          color: white;
+        }
+
+        .regenerate-from-paper-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
         }
