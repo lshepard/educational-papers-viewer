@@ -294,7 +294,7 @@ async def generate_custom_themed_episode(
         # Use multi-voice TTS
         try:
             response = genai_client.models.generate_content(
-                model="gemini-2.5-pro",
+                model="gemini-2.5-pro-preview-tts",
                 contents=script,
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
