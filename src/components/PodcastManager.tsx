@@ -73,7 +73,7 @@ const PodcastManager: React.FC = () => {
   }
 
   const handleRegenerateAudio = async (episodeId: string) => {
-    if (!confirm('Regenerate audio from the current script? This will take 2-3 minutes.')) return
+    if (!window.confirm('Regenerate audio from the current script? This will take 2-3 minutes.')) return
 
     setRegenerating(episodeId)
     try {
@@ -98,7 +98,7 @@ const PodcastManager: React.FC = () => {
   }
 
   const handleDelete = async (episodeId: string) => {
-    if (!confirm('Delete this episode? This cannot be undone.')) return
+    if (!window.confirm('Delete this episode? This cannot be undone.')) return
 
     try {
       const response = await fetch(`${BACKEND_URL}/podcast/episodes/${episodeId}`, {
