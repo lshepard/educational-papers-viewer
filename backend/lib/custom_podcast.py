@@ -227,17 +227,38 @@ async def generate_custom_themed_episode(
         logger.info(f"Generating custom themed episode: {theme}")
         logger.info(f"Papers: {len(papers)}")
 
-        # Create episode record with minimal fields
+        # Create episode record for multi-paper episode
         episode_data = {
             "paper_id": None,  # No single paper for custom episodes
             "title": f"{theme}",
             "description": f"A discussion of {len(papers)} papers exploring {theme}",
-            "generation_status": "processing"
+            "generation_status": "processing",
+            "is_multi_paper": True
         }
 
         episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
         episode_id = episode_response.data[0]["id"]
         logger.info(f"Created episode record: {episode_id}")
+
+        # Insert papers into junction table
+        for idx, paper in enumerate(papers):
+            paper_link = {
+                "episode_id": episode_id,
+                "paper_title": paper.get("title", ""),
+                "paper_authors": paper.get("authors", ""),
+                "paper_year": paper.get("year"),
+                "display_order": idx
+            }
+
+            # Add either paper_id or semantic_scholar_id
+            if paper["source"] == "database":
+                paper_link["paper_id"] = paper["id"]
+            else:  # semantic-scholar
+                paper_link["semantic_scholar_id"] = paper.get("paperId", "")
+
+            supabase.table("episode_papers").insert(paper_link).execute()
+
+        logger.info(f"Linked {len(papers)} papers to episode")
 
         # Fetch content for all papers
         logger.info("Fetching paper content...")

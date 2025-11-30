@@ -15,6 +15,7 @@ export interface PodcastEpisode {
   episode_number: number | null
   season_number: number | null
   explicit: boolean | null
+  is_multi_paper: boolean | null
   created_at: string
   updated_at: string | null
 }
