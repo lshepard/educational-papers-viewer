@@ -2,22 +2,21 @@ import config from '../config'
 
 export interface PodcastEpisode {
   id: string
-  paper_id: string
+  paper_id: string | null
   title: string
   description: string | null
   duration_seconds: number | null
-  storage_bucket: string
+  storage_bucket: string | null
   storage_path: string | null
   audio_url: string | null
-  autocontent_request_id: string
   generation_status: 'pending' | 'processing' | 'downloading' | 'completed' | 'failed'
   generation_error: string | null
-  published_at: string
+  published_at: string | null
   episode_number: number | null
   season_number: number | null
-  explicit: boolean
+  explicit: boolean | null
   created_at: string
-  updated_at: string
+  updated_at: string | null
 }
 
 export interface PodcastGenerationResponse {

@@ -6,7 +6,6 @@ Creates longer-form (15-20 minute) discussions about how papers relate to a them
 """
 
 import logging
-import uuid
 import tempfile
 import os
 import httpx
@@ -224,31 +223,20 @@ async def generate_custom_themed_episode(
     Returns:
         Dict with episode_id, audio_url, and message
     """
-    episode_id = str(uuid.uuid4())
-
     try:
         logger.info(f"Generating custom themed episode: {theme}")
         logger.info(f"Papers: {len(papers)}")
 
-        # Create episode record
+        # Create episode record with minimal fields
         episode_data = {
-            "id": episode_id,
             "paper_id": None,  # No single paper for custom episodes
             "title": f"{theme}",
             "description": f"A discussion of {len(papers)} papers exploring {theme}",
-            "script": None,
-            "audio_url": None,
-            "generation_status": "processing",
-            "generation_error": None,
-            "published_at": datetime.utcnow().isoformat(),
-            "storage_bucket": "podcast-audio",
-            "storage_path": None,
-            "autocontent_request_id": "custom-episode",
-            "episode_type": "custom",
-            "explicit": False
+            "generation_status": "processing"
         }
 
-        supabase.table("podcast_episodes").insert(episode_data).execute()
+        episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
+        episode_id = episode_response.data[0]["id"]
         logger.info(f"Created episode record: {episode_id}")
 
         # Fetch content for all papers
