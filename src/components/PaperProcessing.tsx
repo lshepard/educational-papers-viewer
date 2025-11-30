@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase, Paper } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
+import config from '../config'
 
 const PaperProcessing: React.FC = () => {
   const [papers, setPapers] = useState<Paper[]>([])
@@ -38,10 +39,7 @@ const PaperProcessing: React.FC = () => {
 
     try {
       // Call local Python backend instead of Edge Function
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
-      const extractUrl = `${backendUrl}/extract`
-
-      const response = await fetch(extractUrl, {
+      const response = await fetch(`${config.backendUrl}/extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

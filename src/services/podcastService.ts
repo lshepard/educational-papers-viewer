@@ -1,4 +1,4 @@
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
+import config from '../config'
 
 export interface PodcastEpisode {
   id: string
@@ -39,7 +39,7 @@ export class PodcastService {
    */
   static async generatePodcast(paperId: string): Promise<PodcastGenerationResponse> {
     try {
-      const response = await fetch(`${BACKEND_URL}/podcast/generate`, {
+      const response = await fetch(`${config.backendUrl}/podcast/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,6 +65,6 @@ export class PodcastService {
    * @returns The URL to the RSS feed
    */
   static getRssFeedUrl(): string {
-    return `${BACKEND_URL}/podcast/feed.xml`
+    return `${config.backendUrl}/podcast/feed.xml`
   }
 }

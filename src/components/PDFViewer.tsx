@@ -6,6 +6,7 @@ import 'react-pdf/dist/Page/TextLayer.css'
 import { GenaiPaper, supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import PaperUploadEdit from './PaperUploadEdit'
+import config from '../config'
 
 // Set up the worker for react-pdf - use matching version from unpkg
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
@@ -123,8 +124,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     setExtractionMessage(null)
 
     try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
-      const response = await fetch(`${backendUrl}/extract`, {
+      const response = await fetch(`${config.backendUrl}/extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

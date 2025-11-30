@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
+import config from '../config'
 
 interface PodcastEpisode {
   id: string
@@ -37,7 +36,7 @@ const PodcastManager: React.FC = () => {
 
   const fetchEpisodes = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/podcast/episodes`)
+      const response = await fetch(`${config.backendUrl}/podcast/episodes`)
       const data = await response.json()
       setEpisodes(data.episodes || [])
     } catch (error) {
@@ -56,7 +55,7 @@ const PodcastManager: React.FC = () => {
     if (!editingEpisode) return
 
     try {
-      const response = await fetch(`${BACKEND_URL}/podcast/episodes/${editingEpisode.id}`, {
+      const response = await fetch(`${config.backendUrl}/podcast/episodes/${editingEpisode.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script: editedScript })
@@ -78,7 +77,7 @@ const PodcastManager: React.FC = () => {
 
     setRegenerating(episodeId)
     try {
-      const response = await fetch(`${BACKEND_URL}/podcast/episodes/${episodeId}/regenerate`, {
+      const response = await fetch(`${config.backendUrl}/podcast/episodes/${episodeId}/regenerate`, {
         method: 'POST'
       })
 
@@ -103,7 +102,7 @@ const PodcastManager: React.FC = () => {
 
     setRegeneratingFromPaper(episodeId)
     try {
-      const response = await fetch(`${BACKEND_URL}/podcast/episodes/${episodeId}/regenerate-from-paper`, {
+      const response = await fetch(`${config.backendUrl}/podcast/episodes/${episodeId}/regenerate-from-paper`, {
         method: 'POST'
       })
 
@@ -129,7 +128,7 @@ const PodcastManager: React.FC = () => {
     if (!window.confirm('Delete this episode? This cannot be undone.')) return
 
     try {
-      const response = await fetch(`${BACKEND_URL}/podcast/episodes/${episodeId}`, {
+      const response = await fetch(`${config.backendUrl}/podcast/episodes/${episodeId}`, {
         method: 'DELETE'
       })
 
@@ -167,7 +166,7 @@ const PodcastManager: React.FC = () => {
 
       <div className="podcast-feed-link">
         <h3>RSS Feed URL:</h3>
-        <code>{BACKEND_URL}/podcast/feed.xml</code>
+        <code>{config.backendUrl}/podcast/feed.xml</code>
       </div>
 
       {editingEpisode ? (

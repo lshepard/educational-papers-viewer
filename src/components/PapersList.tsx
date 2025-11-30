@@ -3,6 +3,7 @@ import { GenaiPaper } from '../supabase'
 import { PapersService } from '../services/papersService'
 import { PodcastService } from '../services/podcastService'
 import { useAuth } from '../contexts/AuthContext'
+import config from '../config'
 
 interface PapersListProps {
   onSelectPaper: (paper: GenaiPaper) => void
@@ -46,8 +47,7 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
 
   const fetchPodcastEpisodes = async () => {
     try {
-      const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
-      const response = await fetch(`${BACKEND_URL}/podcast/episodes`)
+      const response = await fetch(`${config.backendUrl}/podcast/episodes`)
       const data = await response.json()
 
       if (data.success && data.episodes) {
