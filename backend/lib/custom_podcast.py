@@ -281,6 +281,15 @@ async def generate_custom_themed_episode(
         logger.info("Generating podcast script...")
         script = await generate_themed_script(theme, papers_content, genai_client)
 
+        # Save script to temp file for debugging
+        script_fd, script_path = tempfile.mkstemp(suffix=".txt", prefix=f"podcast_script_{episode_id}_")
+        try:
+            with os.fdopen(script_fd, 'w') as f:
+                f.write(script)
+            logger.info(f"📝 Script saved to: {script_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save script to temp file: {e}")
+
         # Update episode with script
         supabase.table("podcast_episodes").update({
             "script": script
