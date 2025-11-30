@@ -26,6 +26,7 @@ from google.genai import types
 from supabase import create_client, Client
 import fitz  # PyMuPDF
 from PIL import Image
+from pydub import AudioSegment
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +49,32 @@ if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY]):
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 genai_old.configure(api_key=GEMINI_API_KEY)
+
+
+def convert_audio_to_mp3(audio_data: bytes, source_format: str = 'wav') -> bytes:
+    """
+    Convert audio data to MP3 format.
+
+    Args:
+        audio_data: Raw audio bytes
+        source_format: Source audio format ('wav', 'raw', etc.)
+
+    Returns:
+        MP3-encoded audio bytes
+    """
+    try:
+        # Load audio from bytes
+        audio = AudioSegment.from_file(io.BytesIO(audio_data), format=source_format)
+
+        # Export as MP3
+        mp3_buffer = io.BytesIO()
+        audio.export(mp3_buffer, format='mp3', bitrate='128k')
+        mp3_buffer.seek(0)
+
+        return mp3_buffer.read()
+    except Exception as e:
+        logger.error(f"Failed to convert audio to MP3: {e}")
+        raise
 
 
 @asynccontextmanager
@@ -968,25 +995,44 @@ Focus on making the content digestible and interesting for casual listeners."""
 
         # Extract audio data from response
         audio_data = None
+        audio_mime_type = None
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'inline_data') and part.inline_data:
                     audio_data = part.inline_data.data
+                    audio_mime_type = getattr(part.inline_data, 'mime_type', 'audio/wav')
                     break
 
         if not audio_data:
             raise HTTPException(status_code=500, detail="No audio data in Gemini response")
 
-        logger.info(f"Audio generated, size: {len(audio_data)} bytes")
+        logger.info(f"Audio generated, size: {len(audio_data)} bytes, mime_type: {audio_mime_type}")
 
-        # Upload audio to Supabase storage
+        # Convert to MP3 if not already MP3
+        if audio_mime_type == 'audio/mpeg' or audio_mime_type == 'audio/mp3':
+            logger.info("Audio already in MP3 format")
+            mp3_data = audio_data
+        else:
+            logger.info(f"Converting audio from {audio_mime_type} to MP3...")
+            # Determine source format for pydub
+            if audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
+                source_format = 'wav'
+            else:
+                # Default to wav (Gemini typically returns WAV)
+                logger.warning(f"Unknown audio mime type: {audio_mime_type}, assuming WAV")
+                source_format = 'wav'
+
+            mp3_data = convert_audio_to_mp3(audio_data, source_format)
+            logger.info(f"Converted to MP3, size: {len(mp3_data)} bytes")
+
+        # Upload audio to Supabase storage as MP3
         filename = f"{episode_id}.mp3"
         storage_path_audio = f"{paper_id}/{filename}"
 
         logger.info(f"Uploading audio to storage: episodes/{storage_path_audio}")
         supabase.storage.from_("episodes").upload(
             path=storage_path_audio,
-            file=audio_data,
+            file=mp3_data,
             file_options={
                 "content-type": "audio/mpeg",
                 "upsert": "true"
@@ -1145,23 +1191,43 @@ async def regenerate_podcast_audio(episode_id: str):
 
         # Extract audio data
         audio_data = None
+        audio_mime_type = None
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'inline_data') and part.inline_data:
                     audio_data = part.inline_data.data
+                    audio_mime_type = getattr(part.inline_data, 'mime_type', 'audio/wav')
                     break
 
         if not audio_data:
             raise HTTPException(status_code=500, detail="No audio data in Gemini response")
 
-        # Upload to storage
+        logger.info(f"Audio generated, size: {len(audio_data)} bytes, mime_type: {audio_mime_type}")
+
+        # Convert to MP3 if not already MP3
+        if audio_mime_type == 'audio/mpeg' or audio_mime_type == 'audio/mp3':
+            logger.info("Audio already in MP3 format")
+            mp3_data = audio_data
+        else:
+            logger.info(f"Converting audio from {audio_mime_type} to MP3...")
+            # Determine source format for pydub
+            if audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
+                source_format = 'wav'
+            else:
+                logger.warning(f"Unknown audio mime type: {audio_mime_type}, assuming WAV")
+                source_format = 'wav'
+
+            mp3_data = convert_audio_to_mp3(audio_data, source_format)
+            logger.info(f"Converted to MP3, size: {len(mp3_data)} bytes")
+
+        # Upload to storage as MP3
         paper_id = episode["paper_id"]
         filename = f"{episode_id}.mp3"
         storage_path = f"{paper_id}/{filename}"
 
         supabase.storage.from_("episodes").upload(
             path=storage_path,
-            file=audio_data,
+            file=mp3_data,
             file_options={
                 "content-type": "audio/mpeg",
                 "upsert": "true"
