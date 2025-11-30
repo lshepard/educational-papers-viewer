@@ -918,7 +918,10 @@ Alex: [continues conversation]
 
 Focus on making the content digestible and interesting for casual listeners."""
 
-        model = genai_old.GenerativeModel("gemini-3-pro-preview")
+        model = genai_old.GenerativeModel(
+            "gemini-3-pro-preview",
+            generation_config={"automatic_function_calling": {"disable": True}}
+        )
         script_response = model.generate_content([gemini_file, script_prompt])
         script_text = script_response.text
 
@@ -959,6 +962,7 @@ Focus on making the content digestible and interesting for casual listeners."""
                         ]
                     )
                 ),
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
         )
 
@@ -1135,6 +1139,7 @@ async def regenerate_podcast_audio(episode_id: str):
                         ]
                     )
                 ),
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
         )
 
