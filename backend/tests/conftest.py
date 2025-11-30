@@ -1,29 +1,50 @@
 """
-Pytest configuration and fixtures for backend tests.
+Pytest configuration and shared fixtures for backend tests.
 """
-import os
+
 import pytest
-from pathlib import Path
-
-# Get the backend directory (parent of tests)
-BACKEND_DIR = Path(__file__).parent.parent
-TEST_FIXTURES_DIR = Path(__file__).parent / "fixtures"
+from unittest.mock import Mock, MagicMock
 
 
 @pytest.fixture
-def test_pdf_path():
-    """Fixture that returns the path to the test PDF."""
-    pdf_path = TEST_FIXTURES_DIR / "test_paper.pdf"
-    assert pdf_path.exists(), f"Test PDF not found at {pdf_path}"
-    return str(pdf_path)
+def mock_supabase():
+    """Mock Supabase client."""
+    mock = Mock()
+    mock.storage.from_.return_value.upload.return_value = None
+    mock.storage.from_.return_value.get_public_url.return_value = "https://example.com/file.mp3"
+    mock.storage.from_.return_value.remove.return_value = None
+    return mock
 
 
 @pytest.fixture
-def gemini_api_key():
-    """Fixture that returns the Gemini API key from environment."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        pytest.skip("GEMINI_API_KEY not set in environment")
-    return api_key
+def mock_genai_client():
+    """Mock Gemini AI client."""
+    mock = Mock()
+    return mock
 
 
+@pytest.fixture
+def sample_paper():
+    """Sample paper data for testing."""
+    return {
+        "id": "test-paper-123",
+        "title": "Test Research Paper on Machine Learning",
+        "authors": "John Doe, Jane Smith",
+        "year": 2024,
+        "source_url": "https://example.com/paper.pdf"
+    }
+
+
+@pytest.fixture
+def sample_episode():
+    """Sample podcast episode data for testing."""
+    return {
+        "id": "episode-123",
+        "paper_id": "paper-123",
+        "title": "Podcast Episode Title",
+        "description": "Episode description",
+        "audio_url": "https://example.com/audio.mp3",
+        "duration_seconds": 600,
+        "published_at": "2024-01-15T10:00:00Z",
+        "generation_status": "completed"
+    }
