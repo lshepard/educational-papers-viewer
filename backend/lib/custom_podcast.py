@@ -320,60 +320,44 @@ async def generate_custom_themed_episode(
 
             logger.info(f"Audio generated: {len(audio_data)} bytes")
 
-            # Save audio to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-                temp_audio.write(audio_data)
-                audio_path = temp_audio.name
+            # Convert to MP3
+            logger.info("Converting audio to MP3...")
+            mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
 
-            try:
-                # Convert to MP3
-                logger.info("Converting audio to MP3...")
-                mp3_path = convert_audio_to_mp3(audio_path)
+            # Upload to storage
+            logger.info("Uploading audio to storage...")
+            storage_path = f"custom-episodes/{episode_id}.mp3"
 
-                # Upload to storage
-                logger.info("Uploading audio to storage...")
-                storage_path = f"custom-episodes/{episode_id}.mp3"
+            upload_audio_to_storage(
+                supabase=supabase,
+                audio_data=mp3_data,
+                storage_path=storage_path,
+                bucket_name="podcast-audio"
+            )
 
-                with open(mp3_path, "rb") as f:
-                    audio_file = f.read()
+            # Get public URL
+            audio_url = get_public_url(
+                supabase=supabase,
+                storage_path=storage_path,
+                bucket_name="podcast-audio"
+            )
 
-                upload_audio_to_storage(
-                    supabase=supabase,
-                    audio_data=audio_file,
-                    storage_path=storage_path,
-                    bucket_name="podcast-audio"
-                )
+            logger.info(f"Audio uploaded: {audio_url}")
 
-                # Get public URL
-                audio_url = get_public_url(
-                    supabase=supabase,
-                    storage_path=storage_path,
-                    bucket_name="podcast-audio"
-                )
+            # Update episode record
+            supabase.table("podcast_episodes").update({
+                "audio_url": audio_url,
+                "storage_path": storage_path,
+                "generation_status": "completed"
+            }).eq("id", episode_id).execute()
 
-                logger.info(f"Audio uploaded: {audio_url}")
+            logger.info(f"Custom episode generated successfully: {episode_id}")
 
-                # Update episode record
-                supabase.table("podcast_episodes").update({
-                    "audio_url": audio_url,
-                    "storage_path": storage_path,
-                    "generation_status": "completed"
-                }).eq("id", episode_id).execute()
-
-                logger.info(f"Custom episode generated successfully: {episode_id}")
-
-                return {
-                    "episode_id": episode_id,
-                    "audio_url": audio_url,
-                    "message": f"Custom episode created: {theme}"
-                }
-
-            finally:
-                # Clean up temp files
-                if os.path.exists(audio_path):
-                    os.remove(audio_path)
-                if 'mp3_path' in locals() and os.path.exists(mp3_path):
-                    os.remove(mp3_path)
+            return {
+                "episode_id": episode_id,
+                "audio_url": audio_url,
+                "message": f"Custom episode created: {theme}"
+            }
 
         except Exception as e:
             logger.error(f"Failed to generate audio: {e}", exc_info=True)
