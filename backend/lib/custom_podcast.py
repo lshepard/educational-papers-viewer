@@ -34,7 +34,7 @@ async def fetch_paper_content(paper: Dict[str, Any], supabase: Client) -> Dict[s
     """
     if paper["source"] == "database":
         # Fetch from database
-        response = supabase.table("genai_papers").select("*").eq("id", paper["id"]).single().execute()
+        response = supabase.table("papers").select("*").eq("id", paper["id"]).single().execute()
         paper_data = response.data
 
         return {

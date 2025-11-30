@@ -842,7 +842,7 @@ async def search_papers(q: str):
     try:
         search_term = f"%{q}%"
 
-        response = supabase.table("genai_papers").select("*").or_(
+        response = supabase.table("papers").select("*").or_(
             f"title.ilike.{search_term},"
             f"authors.ilike.{search_term},"
             f"abstract.ilike.{search_term},"
