@@ -8,9 +8,11 @@ and Gemini as an orchestrating agent with function calling.
 
 import logging
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
 from semanticscholar import SemanticScholar
 from google import genai
 from google.genai import types
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +20,18 @@ logger = logging.getLogger(__name__)
 class PaperResearchAgent:
     """Agent that researches papers to gather context for podcast generation."""
 
-    def __init__(self, genai_client: genai.Client):
+    def __init__(self, genai_client: genai.Client, supabase_client: Optional[Client] = None):
         """
         Initialize the research agent.
 
         Args:
             genai_client: Configured Google GenAI client
+            supabase_client: Optional Supabase client for caching research results
         """
         self.genai_client = genai_client
+        self.supabase_client = supabase_client
         self.semantic_scholar = SemanticScholar()
+        self.cache_ttl_days = 7  # Cache research results for 7 days
 
     def search_paper_on_semantic_scholar(self, title: str, authors: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -159,22 +164,111 @@ class PaperResearchAgent:
             logger.error(f"Error searching web: {e}")
             return {"query": query, "error": str(e)}
 
-    def research_paper_context(self, title: str, authors: Optional[str] = None,
-                               extract_products: bool = True) -> Dict[str, Any]:
+    def get_cached_research(self, paper_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached research results for a paper.
+
+        Args:
+            paper_id: Paper ID (UUID)
+
+        Returns:
+            Cached research results if available and fresh, None otherwise
+        """
+        if not self.supabase_client:
+            return None
+
+        try:
+            response = self.supabase_client.table("paper_research_metadata").select("*").eq("paper_id", paper_id).execute()
+
+            if not response.data or len(response.data) == 0:
+                logger.info(f"No cached research found for paper: {paper_id}")
+                return None
+
+            cache_entry = response.data[0]
+
+            # Check if cache is still fresh
+            last_updated = datetime.fromisoformat(cache_entry["last_updated"].replace('Z', '+00:00'))
+            cache_age = datetime.now(last_updated.tzinfo) - last_updated
+
+            if cache_age > timedelta(days=self.cache_ttl_days):
+                logger.info(f"Cached research expired for paper: {paper_id} (age: {cache_age.days} days)")
+                return None
+
+            logger.info(f"Using cached research for paper: {paper_id}")
+
+            # Reconstruct research results from cache
+            return {
+                "paper_metadata": cache_entry["metadata"],
+                "influential_references": cache_entry["influential_references"],
+                "product_searches": [],
+                "research_summary": self._generate_research_summary({
+                    "paper_metadata": cache_entry["metadata"],
+                    "influential_references": cache_entry["influential_references"]
+                })
+            }
+
+        except Exception as e:
+            logger.error(f"Error reading research cache: {e}")
+            return None
+
+    def save_research_to_cache(self, paper_id: str, research_results: Dict[str, Any]) -> None:
+        """
+        Save research results to cache.
+
+        Args:
+            paper_id: Paper ID (UUID)
+            research_results: Research results to cache
+        """
+        if not self.supabase_client:
+            return
+
+        try:
+            metadata = research_results.get("paper_metadata", {})
+            if "error" in metadata:
+                logger.info("Skipping cache save - no valid metadata")
+                return
+
+            cache_data = {
+                "paper_id": paper_id,
+                "semantic_scholar_id": metadata.get("paper_id"),
+                "citation_count": metadata.get("citation_count", 0),
+                "influential_citation_count": metadata.get("influential_citation_count", 0),
+                "metadata": metadata,
+                "influential_references": research_results.get("influential_references", []),
+                "last_updated": datetime.utcnow().isoformat()
+            }
+
+            # Upsert (insert or update)
+            self.supabase_client.table("paper_research_metadata").upsert(cache_data).execute()
+            logger.info(f"Saved research to cache for paper: {paper_id}")
+
+        except Exception as e:
+            logger.error(f"Error saving research to cache: {e}")
+
+    def research_paper_context(self, paper_id: str, title: str, authors: Optional[str] = None,
+                               extract_products: bool = True, use_cache: bool = True) -> Dict[str, Any]:
         """
         Conduct comprehensive research on a paper to gather context.
 
         This is the main entry point that orchestrates all research activities.
 
         Args:
+            paper_id: Paper ID (UUID) for caching
             title: Paper title
             authors: Optional authors
             extract_products: Whether to search for products mentioned
+            use_cache: Whether to use cached results if available
 
         Returns:
             Dictionary with all research findings
         """
         logger.info(f"Starting comprehensive research for paper: {title}")
+
+        # Check cache first
+        if use_cache:
+            cached_results = self.get_cached_research(paper_id)
+            if cached_results:
+                return cached_results
 
         research_results = {
             "paper_metadata": None,
@@ -192,9 +286,9 @@ class PaperResearchAgent:
             return research_results
 
         # 2. Get influential references
-        paper_id = paper_metadata.get("paper_id")
-        if paper_id:
-            references = self.get_paper_references(paper_id, limit=5)
+        semantic_scholar_id = paper_metadata.get("paper_id")
+        if semantic_scholar_id:
+            references = self.get_paper_references(semantic_scholar_id, limit=5)
             research_results["influential_references"] = references
 
         # 3. Extract and search for products (if requested)
@@ -204,6 +298,9 @@ class PaperResearchAgent:
         # 4. Generate a research summary
         research_summary = self._generate_research_summary(research_results)
         research_results["research_summary"] = research_summary
+
+        # 5. Save to cache
+        self.save_research_to_cache(paper_id, research_results)
 
         logger.info("Research complete")
         return research_results
@@ -249,14 +346,102 @@ class PaperResearchAgent:
         return "".join(summary_parts)
 
 
-def create_research_agent(genai_client: genai.Client) -> PaperResearchAgent:
+def create_research_agent(genai_client: genai.Client, supabase_client: Optional[Client] = None) -> PaperResearchAgent:
     """
     Factory function to create a research agent.
 
     Args:
         genai_client: Configured Google GenAI client
+        supabase_client: Optional Supabase client for caching
 
     Returns:
         Initialized PaperResearchAgent
     """
-    return PaperResearchAgent(genai_client)
+    return PaperResearchAgent(genai_client, supabase_client)
+
+
+async def populate_research_for_existing_papers(
+    genai_client: genai.Client,
+    supabase_client: Client,
+    limit: Optional[int] = None,
+    force_refresh: bool = False
+) -> Dict[str, Any]:
+    """
+    Populate research metadata for all existing papers in the database.
+
+    Args:
+        genai_client: Configured Google GenAI client
+        supabase_client: Supabase client
+        limit: Optional limit on number of papers to process
+        force_refresh: If True, refresh even if cache exists
+
+    Returns:
+        Dictionary with summary of results
+    """
+    logger.info("Starting to populate research metadata for existing papers...")
+
+    # Create research agent
+    agent = create_research_agent(genai_client, supabase_client)
+
+    # Fetch all papers
+    query = supabase_client.table("papers").select("id, title, authors")
+    if limit:
+        query = query.limit(limit)
+
+    response = query.execute()
+    papers = response.data
+
+    results = {
+        "total": len(papers),
+        "success": 0,
+        "failed": 0,
+        "cached": 0,
+        "errors": []
+    }
+
+    for paper in papers:
+        paper_id = paper["id"]
+        title = paper.get("title", "Untitled")
+        authors = paper.get("authors")
+
+        try:
+            logger.info(f"Processing paper: {title}")
+
+            # Check if cached and skip if not forcing refresh
+            if not force_refresh:
+                cached = agent.get_cached_research(paper_id)
+                if cached:
+                    logger.info(f"Skipping {title} - already cached")
+                    results["cached"] += 1
+                    continue
+
+            # Research the paper
+            research_results = agent.research_paper_context(
+                paper_id=paper_id,
+                title=title,
+                authors=authors,
+                use_cache=False  # Force fresh research
+            )
+
+            if "error" not in research_results.get("paper_metadata", {}):
+                results["success"] += 1
+                logger.info(f"Successfully researched: {title}")
+            else:
+                results["failed"] += 1
+                results["errors"].append({
+                    "paper_id": paper_id,
+                    "title": title,
+                    "error": "Paper not found on Semantic Scholar"
+                })
+
+        except Exception as e:
+            logger.error(f"Error processing paper {title}: {e}")
+            results["failed"] += 1
+            results["errors"].append({
+                "paper_id": paper_id,
+                "title": title,
+                "error": str(e)
+            })
+
+    logger.info(f"Research population complete: {results['success']} succeeded, {results['failed']} failed, {results['cached']} cached")
+    return results

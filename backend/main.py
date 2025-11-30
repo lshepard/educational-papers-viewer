@@ -26,7 +26,7 @@ from supabase import create_client, Client
 import fitz  # PyMuPDF
 from PIL import Image
 from pydub import AudioSegment
-from research_agent import create_research_agent
+from research_agent import create_research_agent, populate_research_for_existing_papers
 
 # Load environment variables
 load_dotenv()
@@ -940,8 +940,9 @@ async def _generate_podcast_from_paper(paper_id: str, episode_id: str = None) ->
 
         # Research paper context using Semantic Scholar and web search
         logger.info("Researching paper context...")
-        research_agent = create_research_agent(genai_client)
+        research_agent = create_research_agent(genai_client, supabase)
         research_context = research_agent.research_paper_context(
+            paper_id=paper_id,
             title=paper.get('title', 'Untitled Paper'),
             authors=paper.get('authors'),
             extract_products=True
@@ -1537,6 +1538,40 @@ async def get_podcast_feed():
 
     except Exception as e:
         logger.error(f"Failed to generate podcast feed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/research/populate")
+async def populate_research_metadata(limit: Optional[int] = None, force_refresh: bool = False):
+    """
+    Populate research metadata for existing papers in the database.
+
+    This endpoint uses Semantic Scholar API to gather citation counts,
+    influential references, and other metadata for papers.
+
+    Args:
+        limit: Optional limit on number of papers to process
+        force_refresh: If True, refresh even if cache exists
+
+    Returns:
+        Summary of results including success/failure counts
+    """
+    try:
+        genai_client = app.state.genai_client
+        results = await populate_research_for_existing_papers(
+            genai_client=genai_client,
+            supabase_client=supabase,
+            limit=limit,
+            force_refresh=force_refresh
+        )
+
+        return {
+            "success": True,
+            "results": results
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to populate research metadata: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
