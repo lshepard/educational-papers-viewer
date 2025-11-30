@@ -11,7 +11,7 @@ import logging
 import tempfile
 import os
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pydub import AudioSegment
 from google import genai
 from google.genai import types
