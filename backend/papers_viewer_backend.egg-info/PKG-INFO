@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: papers-viewer-backend
+Version: 0.1.0
+Summary: Backend service for extracting content from research papers
+Author: Luke Shepard
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.32.0
+Requires-Dist: python-multipart>=0.0.18
+Requires-Dist: supabase>=2.11.0
+Requires-Dist: google-generativeai>=0.8.0
+Requires-Dist: google-genai>=0.4.0
+Requires-Dist: pymupdf>=1.24.0
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: pydantic>=2.10.0
+Requires-Dist: pytest>=8.4.2
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.3; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.1; extra == "dev"
