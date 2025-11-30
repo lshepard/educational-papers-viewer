@@ -965,10 +965,20 @@ Create an engaging, conversational podcast discussion between two hosts about th
 - Host 1 (Alex): Enthusiastic and asks great questions
 - Host 2 (Sam): Knowledgeable and explains concepts clearly
 
+IMPORTANT: Start the episode with a brief introduction that sets the context:
+- Mention the paper title and authors
+- Note the authors' affiliations (if available in research context)
+- Be HONEST about the paper's significance: Is it highly influential (many citations)?
+  A well-recognized contribution? Or an emerging/newer work?
+- Briefly mention if the authors are established researchers with significant prior work,
+  or if they're newer to the field (based on the author background in research context)
+- Set expectations appropriately - don't oversell a minor paper, but do highlight genuine importance
+
 The podcast should:
-- Incorporate the research context naturally into the discussion (mention citation impact if significant)
+- START with this context-setting introduction about the paper and authors
+- Incorporate the research context naturally into the discussion
 - Reference the paper's place in the field and important prior work when relevant
-- Be lighthearted and fun, but informative
+- Be lighthearted and fun, but informative and HONEST
 - Discuss key findings, methodology, and real-world implications
 - Use natural, conversational language - NO "um", "like", or filler words (the TTS will add natural pauses)
 - Be about 3-5 minutes when spoken (roughly 450-750 words)
@@ -980,7 +990,7 @@ Sam: [responds naturally]
 Alex: [continues conversation]
 ...
 
-Focus on making the content digestible and interesting for casual listeners."""
+Focus on making the content digestible, honest, and interesting for casual listeners."""
 
         # Generate script with Gemini
         script_response = genai_client.models.generate_content(

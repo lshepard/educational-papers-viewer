@@ -56,7 +56,9 @@ class PaperResearchAgent:
                 query=query,
                 limit=1,
                 fields=['paperId', 'title', 'abstract', 'year', 'citationCount',
-                        'influentialCitationCount', 'authors', 'venue', 'publicationTypes',
+                        'influentialCitationCount', 'authors', 'authors.name', 'authors.authorId',
+                        'authors.affiliations', 'authors.paperCount', 'authors.citationCount',
+                        'authors.hIndex', 'venue', 'publicationTypes',
                         'isOpenAccess', 'fieldsOfStudy']
             )
 
@@ -66,6 +68,20 @@ class PaperResearchAgent:
 
             paper = results.items[0]
 
+            # Extract detailed author information
+            authors_detailed = []
+            if hasattr(paper, 'authors'):
+                for a in paper.authors:
+                    author_info = {
+                        "name": a.name,
+                        "author_id": a.authorId if hasattr(a, 'authorId') else None,
+                        "affiliations": a.affiliations if hasattr(a, 'affiliations') else [],
+                        "paper_count": a.paperCount if hasattr(a, 'paperCount') else 0,
+                        "citation_count": a.citationCount if hasattr(a, 'citationCount') else 0,
+                        "h_index": a.hIndex if hasattr(a, 'hIndex') else 0
+                    }
+                    authors_detailed.append(author_info)
+
             return {
                 "paper_id": paper.paperId,
                 "title": paper.title,
@@ -73,7 +89,8 @@ class PaperResearchAgent:
                 "year": paper.year,
                 "citation_count": paper.citationCount if hasattr(paper, 'citationCount') else 0,
                 "influential_citation_count": paper.influentialCitationCount if hasattr(paper, 'influentialCitationCount') else 0,
-                "authors": [a.name for a in paper.authors] if hasattr(paper, 'authors') else [],
+                "authors": [a["name"] for a in authors_detailed],  # Keep simple list for backward compat
+                "authors_detailed": authors_detailed,  # Detailed author info
                 "venue": paper.venue if hasattr(paper, 'venue') else None,
                 "fields_of_study": paper.fieldsOfStudy if hasattr(paper, 'fieldsOfStudy') else [],
                 "is_open_access": paper.isOpenAccess if hasattr(paper, 'isOpenAccess') else False
@@ -335,11 +352,43 @@ class PaperResearchAgent:
             else:
                 summary_parts.append("representing an emerging contribution to the field. ")
 
+            # Add author context
+            authors_detailed = metadata.get("authors_detailed", [])
+            if authors_detailed:
+                summary_parts.append("\n\nAuthor Background: ")
+
+                # Categorize authors by experience
+                highly_established = []  # h-index > 30 or citations > 100k
+                established = []  # h-index > 15 or citations > 50k
+                emerging = []  # everyone else
+
+                for author in authors_detailed:
+                    h_index = author.get("h_index", 0)
+                    total_citations = author.get("citation_count", 0)
+                    name = author.get("name", "Unknown")
+                    affiliations = author.get("affiliations", [])
+                    affiliation_str = f" ({', '.join(affiliations)})" if affiliations else ""
+
+                    if h_index > 30 or total_citations > 100000:
+                        highly_established.append(f"{name}{affiliation_str} (h-index: {h_index}, {total_citations:,} total citations)")
+                    elif h_index > 15 or total_citations > 50000:
+                        established.append(f"{name}{affiliation_str} (h-index: {h_index})")
+                    else:
+                        paper_count = author.get("paper_count", 0)
+                        emerging.append(f"{name}{affiliation_str} ({paper_count} papers)")
+
+                if highly_established:
+                    summary_parts.append(f"The team includes highly established researchers: {'; '.join(highly_established)}. ")
+                if established:
+                    summary_parts.append(f"Established researchers: {'; '.join(established)}. ")
+                if emerging:
+                    summary_parts.append(f"Emerging researchers: {'; '.join(emerging)}. ")
+
         references = research_results.get("influential_references", [])
         if references:
             top_ref = references[0]
             summary_parts.append(
-                f"The paper builds on important prior work including '{top_ref['title']}' "
+                f"\n\nThe paper builds on important prior work including '{top_ref['title']}' "
                 f"({top_ref.get('year', 'n/a')}), which has {top_ref.get('citation_count', 0)} citations. "
             )
 
