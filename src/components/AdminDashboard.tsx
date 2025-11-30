@@ -3,19 +3,35 @@ import { useAuth } from '../contexts/AuthContext'
 import { Link, useNavigate } from 'react-router-dom'
 
 const AdminDashboard: React.FC = () => {
-  const { user, signOut } = useAuth()
+  const { user, signOut, loading } = useAuth()
   const navigate = useNavigate()
 
-  // If not logged in, redirect to login
+  // If not logged in, redirect to login (but wait for auth to finish loading)
   React.useEffect(() => {
-    if (!user) {
+    if (!loading && !user) {
       navigate('/admin/login')
     }
-  }, [user, navigate])
+  }, [user, loading, navigate])
 
   const handleSignOut = async () => {
     await signOut()
     navigate('/')
+  }
+
+  // Show loading state while auth is initializing
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        fontSize: '1.2rem',
+        color: '#666'
+      }}>
+        Loading...
+      </div>
+    )
   }
 
   if (!user) {

@@ -18,7 +18,7 @@ interface PodcastEpisode {
 }
 
 const PodcastManager: React.FC = () => {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [episodes, setEpisodes] = useState<PodcastEpisode[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,12 +27,12 @@ const PodcastManager: React.FC = () => {
   const [regenerating, setRegenerating] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!user) {
+    if (!authLoading && !user) {
       navigate('/admin/login')
-    } else {
+    } else if (user) {
       fetchEpisodes()
     }
-  }, [user, navigate])
+  }, [user, authLoading, navigate])
 
   const fetchEpisodes = async () => {
     try {
@@ -114,7 +114,18 @@ const PodcastManager: React.FC = () => {
     }
   }
 
-  if (!user) return null
+  if (authLoading || !user) {
+    return (
+      <div className="loading" style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh'
+      }}>
+        {authLoading ? 'Loading...' : null}
+      </div>
+    )
+  }
   if (loading) return <div className="loading">Loading episodes...</div>
 
   return (
