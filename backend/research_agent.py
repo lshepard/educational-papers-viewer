@@ -30,8 +30,15 @@ class PaperResearchAgent:
         """
         self.genai_client = genai_client
         self.supabase_client = supabase_client
-        self.semantic_scholar = SemanticScholar()
+        self._semantic_scholar = None  # Lazy initialization to avoid uvloop conflict
         self.cache_ttl_days = 7  # Cache research results for 7 days
+
+    @property
+    def semantic_scholar(self) -> SemanticScholar:
+        """Lazy initialization of SemanticScholar to avoid uvloop conflicts."""
+        if self._semantic_scholar is None:
+            self._semantic_scholar = SemanticScholar()
+        return self._semantic_scholar
 
     def search_paper_on_semantic_scholar(self, title: str, authors: Optional[str] = None) -> Dict[str, Any]:
         """
