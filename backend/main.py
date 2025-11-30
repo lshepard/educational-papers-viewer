@@ -932,12 +932,10 @@ async def _generate_podcast_from_paper(paper_id: str, episode_id: str = None) ->
         genai_client = app.state.genai_client
 
         # Upload file
-        with open(temp_file_path, 'rb') as f:
-            file_data = f.read()
-
-        upload_response = genai_client.files.upload(path=temp_file_path)
+        upload_response = genai_client.files.upload(file=temp_file_path)
+        gemini_file_name = upload_response.name
         gemini_file_uri = upload_response.uri
-        logger.info(f"File uploaded to Gemini: {gemini_file_uri}")
+        logger.info(f"File uploaded to Gemini: {gemini_file_uri} (name: {gemini_file_name})")
 
         # Generate podcast script using Gemini
         logger.info("Generating podcast script...")
@@ -1128,11 +1126,12 @@ Focus on making the content digestible and interesting for casual listeners."""
             except Exception as e:
                 logger.warning(f"Could not delete temp file: {e}")
 
-        if 'gemini_file_uri' in locals() and gemini_file_uri:
+        if 'gemini_file_name' in locals() and gemini_file_name:
             try:
-                # Extract file name from URI and delete
-                file_name = gemini_file_uri.split('/')[-1]
-                genai_client.files.delete(name=file_name)
+                # Delete uploaded file from Gemini
+                genai_client = app.state.genai_client
+                genai_client.files.delete(name=gemini_file_name)
+                logger.info(f"Deleted Gemini file: {gemini_file_name}")
             except Exception as e:
                 logger.warning(f"Could not delete Gemini file: {e}")
 
