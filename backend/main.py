@@ -51,20 +51,32 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 genai_old.configure(api_key=GEMINI_API_KEY)
 
 
-def convert_audio_to_mp3(audio_data: bytes, source_format: str = 'wav') -> bytes:
+def convert_audio_to_mp3(audio_data: bytes, source_format: str = 'wav', sample_rate: int = 24000, channels: int = 1) -> bytes:
     """
     Convert audio data to MP3 format.
 
     Args:
         audio_data: Raw audio bytes
-        source_format: Source audio format ('wav', 'raw', etc.)
+        source_format: Source audio format ('wav', 'raw', 'pcm')
+        sample_rate: Sample rate in Hz (for raw PCM)
+        channels: Number of audio channels (for raw PCM)
 
     Returns:
         MP3-encoded audio bytes
     """
     try:
-        # Load audio from bytes
-        audio = AudioSegment.from_file(io.BytesIO(audio_data), format=source_format)
+        if source_format == 'pcm' or source_format == 'raw':
+            # Raw PCM data - use from_raw()
+            # L16 means 16-bit = 2 bytes sample width
+            audio = AudioSegment.from_raw(
+                io.BytesIO(audio_data),
+                sample_width=2,  # 16-bit = 2 bytes
+                frame_rate=sample_rate,
+                channels=channels
+            )
+        else:
+            # File with headers (WAV, etc.) - use from_file()
+            audio = AudioSegment.from_file(io.BytesIO(audio_data), format=source_format)
 
         # Export as MP3
         mp3_buffer = io.BytesIO()
@@ -1014,15 +1026,27 @@ Focus on making the content digestible and interesting for casual listeners."""
             mp3_data = audio_data
         else:
             logger.info(f"Converting audio from {audio_mime_type} to MP3...")
-            # Determine source format for pydub
-            if audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
-                source_format = 'wav'
-            else:
-                # Default to wav (Gemini typically returns WAV)
-                logger.warning(f"Unknown audio mime type: {audio_mime_type}, assuming WAV")
-                source_format = 'wav'
 
-            mp3_data = convert_audio_to_mp3(audio_data, source_format)
+            # Parse mime type to determine format and parameters
+            if 'L16' in audio_mime_type or 'pcm' in audio_mime_type.lower():
+                # Raw PCM format
+                source_format = 'pcm'
+                # Extract sample rate from mime type (e.g., "rate=24000")
+                sample_rate = 24000  # Default
+                if 'rate=' in audio_mime_type:
+                    import re
+                    rate_match = re.search(r'rate=(\d+)', audio_mime_type)
+                    if rate_match:
+                        sample_rate = int(rate_match.group(1))
+
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='pcm', sample_rate=sample_rate, channels=1)
+            elif audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
+            else:
+                # Unknown format, try as WAV
+                logger.warning(f"Unknown audio mime type: {audio_mime_type}, trying as WAV")
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
+
             logger.info(f"Converted to MP3, size: {len(mp3_data)} bytes")
 
         # Upload audio to Supabase storage as MP3
@@ -1210,14 +1234,27 @@ async def regenerate_podcast_audio(episode_id: str):
             mp3_data = audio_data
         else:
             logger.info(f"Converting audio from {audio_mime_type} to MP3...")
-            # Determine source format for pydub
-            if audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
-                source_format = 'wav'
-            else:
-                logger.warning(f"Unknown audio mime type: {audio_mime_type}, assuming WAV")
-                source_format = 'wav'
 
-            mp3_data = convert_audio_to_mp3(audio_data, source_format)
+            # Parse mime type to determine format and parameters
+            if 'L16' in audio_mime_type or 'pcm' in audio_mime_type.lower():
+                # Raw PCM format
+                source_format = 'pcm'
+                # Extract sample rate from mime type (e.g., "rate=24000")
+                sample_rate = 24000  # Default
+                if 'rate=' in audio_mime_type:
+                    import re
+                    rate_match = re.search(r'rate=(\d+)', audio_mime_type)
+                    if rate_match:
+                        sample_rate = int(rate_match.group(1))
+
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='pcm', sample_rate=sample_rate, channels=1)
+            elif audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
+            else:
+                # Unknown format, try as WAV
+                logger.warning(f"Unknown audio mime type: {audio_mime_type}, trying as WAV")
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
+
             logger.info(f"Converted to MP3, size: {len(mp3_data)} bytes")
 
         # Upload to storage as MP3

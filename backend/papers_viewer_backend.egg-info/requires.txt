@@ -10,6 +10,7 @@ python-dotenv>=1.0.0
 httpx>=0.28.0
 pydantic>=2.10.0
 pytest>=8.4.2
+pydub>=0.25.1
 
 [dev]
 pytest>=7.4.3
