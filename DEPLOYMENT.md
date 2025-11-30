@@ -56,3 +56,58 @@ REACT_APP_BACKEND_URL="http://localhost:8000"
    ```
 
 That's it! Both frontend and backend run from the same domain.
+
+## Backend Deployment Options
+
+### Option 1: Docker (Recommended for Production)
+
+#### Build the Docker Image
+```bash
+cd backend
+docker build -t papers-backend .
+```
+
+#### Run with Environment Variables
+
+**Method 1: Using .env file (easiest)**
+```bash
+# Copy and configure environment variables
+cp .env.example .env
+# Edit .env with your actual values
+
+# Run container
+docker run -p 8000:8000 --env-file .env papers-backend
+```
+
+**Method 2: Direct environment variables**
+```bash
+docker run -p 8000:8000 \
+  -e SUPABASE_URL="https://your-project.supabase.co" \
+  -e SUPABASE_SERVICE_KEY="your-service-role-key" \
+  -e GEMINI_API_KEY="your-gemini-api-key" \
+  -e FRONTEND_URL="https://papers.yourdomain.com" \
+  papers-backend
+```
+
+#### Required Environment Variables
+- `SUPABASE_URL`: Your Supabase project URL
+- `SUPABASE_SERVICE_KEY`: Supabase service role key (not anon key!)
+- `GEMINI_API_KEY`: Google Gemini API key for AI features
+- `FRONTEND_URL`: Frontend URL for CORS (optional, defaults to localhost:3000)
+
+See `backend/.env.example` for additional optional variables like Google Cloud credentials.
+
+### Option 2: Direct Python Execution
+
+```bash
+cd backend
+# Create virtual environment and install dependencies
+uv sync
+
+# Copy and configure environment variables
+cp .env.example .env
+# Edit .env with your actual values
+
+# Run with uvicorn
+uv run uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
