@@ -833,6 +833,182 @@ async def get_podcast_feed():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/papers/search")
+async def search_papers(q: str):
+    """
+    Search papers in the database by theme/keywords.
+    Searches across title, authors, abstract, and other fields.
+    """
+    try:
+        search_term = f"%{q}%"
+
+        response = supabase.table("genai_papers").select("*").or_(
+            f"title.ilike.{search_term},"
+            f"authors.ilike.{search_term},"
+            f"abstract.ilike.{search_term},"
+            f"application.ilike.{search_term},"
+            f"venue.ilike.{search_term}"
+        ).limit(50).execute()
+
+        return {
+            "success": True,
+            "papers": response.data
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to search papers: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/semantic-scholar/search")
+async def search_semantic_scholar(q: str, limit: int = 10):
+    """
+    Search Semantic Scholar for papers.
+    Acts as a proxy to the Semantic Scholar API.
+    """
+    try:
+        import httpx
+
+        # Search using Semantic Scholar API
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.semanticscholar.org/graph/v1/paper/search",
+                params={
+                    "query": q,
+                    "limit": limit,
+                    "fields": "paperId,title,authors,year,venue,citationCount,abstract,url"
+                },
+                timeout=30.0
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Semantic Scholar API error")
+
+            data = response.json()
+
+            return {
+                "success": True,
+                "papers": data.get("data", [])
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to search Semantic Scholar: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CitationsRequest(BaseModel):
+    paper_ids: List[str]
+
+
+@app.post("/semantic-scholar/citations")
+async def fetch_citations(request: CitationsRequest):
+    """
+    Fetch important citations from Semantic Scholar papers.
+    Returns the most influential/highly cited references from the selected papers.
+    """
+    try:
+        import httpx
+
+        all_citations = []
+        seen_paper_ids = set()
+
+        async with httpx.AsyncClient() as client:
+            for paper_id in request.paper_ids:
+                try:
+                    # Get paper details with references
+                    response = await client.get(
+                        f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",
+                        params={
+                            "fields": "references,references.paperId,references.title,references.authors,references.year,references.citationCount,references.venue"
+                        },
+                        timeout=30.0
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        references = data.get("references", [])
+
+                        # Filter for highly cited references (top 5 per paper)
+                        sorted_refs = sorted(
+                            references,
+                            key=lambda r: r.get("citationCount", 0),
+                            reverse=True
+                        )[:5]
+
+                        for ref in sorted_refs:
+                            paper_id = ref.get("paperId")
+                            if paper_id and paper_id not in seen_paper_ids:
+                                seen_paper_ids.add(paper_id)
+                                all_citations.append({
+                                    "paperId": paper_id,
+                                    "title": ref.get("title", ""),
+                                    "authors": ref.get("authors", []),
+                                    "year": ref.get("year"),
+                                    "venue": ref.get("venue"),
+                                    "citationCount": ref.get("citationCount", 0),
+                                    "abstract": None,
+                                    "url": f"https://www.semanticscholar.org/paper/{paper_id}"
+                                })
+
+                except Exception as e:
+                    logger.warning(f"Failed to fetch citations for paper {paper_id}: {e}")
+                    continue
+
+        # Sort by citation count and return top 10
+        all_citations.sort(key=lambda p: p["citationCount"], reverse=True)
+
+        return {
+            "success": True,
+            "citations": all_citations[:10]
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to fetch citations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CustomEpisodeRequest(BaseModel):
+    theme: str
+    papers: List[Dict[str, Any]]
+
+
+class CustomEpisodeResponse(BaseModel):
+    success: bool
+    episode_id: str
+    audio_url: str
+    message: str
+
+
+@app.post("/podcast/generate-custom", response_model=CustomEpisodeResponse)
+async def generate_custom_episode(request: CustomEpisodeRequest):
+    """
+    Generate a custom podcast episode from multiple papers around a theme.
+    Creates a 15-20 minute discussion about how the papers relate to the theme.
+    """
+    try:
+        from lib.custom_podcast import generate_custom_themed_episode
+
+        genai_client = app.state.genai_client
+
+        result = await generate_custom_themed_episode(
+            theme=request.theme,
+            papers=request.papers,
+            supabase=supabase,
+            genai_client=genai_client
+        )
+
+        return CustomEpisodeResponse(
+            success=True,
+            episode_id=result["episode_id"],
+            audio_url=result["audio_url"],
+            message=result["message"]
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to generate custom episode: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/research/populate")
 async def populate_research_metadata(limit: Optional[int] = None, force_refresh: bool = False):
     """

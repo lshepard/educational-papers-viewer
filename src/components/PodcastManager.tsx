@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import config from '../config'
+import CustomEpisodeCreator from './CustomEpisodeCreator'
 
 interface PodcastEpisode {
   id: string
@@ -168,6 +169,9 @@ const PodcastManager: React.FC = () => {
         <h3>RSS Feed URL:</h3>
         <code>{config.backendUrl}/podcast/feed.xml</code>
       </div>
+
+      {/* Custom Episode Creator */}
+      <CustomEpisodeCreator />
 
       {editingEpisode ? (
         <div className="episode-editor">
