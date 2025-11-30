@@ -26,6 +26,7 @@ from supabase import create_client, Client
 import fitz  # PyMuPDF
 from PIL import Image
 from pydub import AudioSegment
+from research_agent import create_research_agent
 
 # Load environment variables
 load_dotenv()
@@ -937,15 +938,35 @@ async def _generate_podcast_from_paper(paper_id: str, episode_id: str = None) ->
         gemini_file_uri = upload_response.uri
         logger.info(f"File uploaded to Gemini: {gemini_file_uri} (name: {gemini_file_name})")
 
+        # Research paper context using Semantic Scholar and web search
+        logger.info("Researching paper context...")
+        research_agent = create_research_agent(genai_client)
+        research_context = research_agent.research_paper_context(
+            title=paper.get('title', 'Untitled Paper'),
+            authors=paper.get('authors'),
+            extract_products=True
+        )
+        logger.info(f"Research complete: {research_context['research_summary']}")
+
         # Generate podcast script using Gemini
-        logger.info("Generating podcast script...")
-        script_prompt = """You are creating a podcast script in the style of Google's NotebookLM Audio Overviews.
+        logger.info("Generating podcast script with research context...")
+
+        # Build enhanced script prompt with research context
+        script_prompt = f"""You are creating a podcast script in the style of Google's NotebookLM Audio Overviews.
+
+RESEARCH CONTEXT:
+{research_context['research_summary']}
+
+Paper Citation Count: {research_context['paper_metadata'].get('citation_count', 'unknown')}
+Number of Influential References: {len(research_context['influential_references'])}
 
 Create an engaging, conversational podcast discussion between two hosts about this research paper:
 - Host 1 (Alex): Enthusiastic and asks great questions
 - Host 2 (Sam): Knowledgeable and explains concepts clearly
 
 The podcast should:
+- Incorporate the research context naturally into the discussion (mention citation impact if significant)
+- Reference the paper's place in the field and important prior work when relevant
 - Be lighthearted and fun, but informative
 - Discuss key findings, methodology, and real-world implications
 - Use natural, conversational language - NO "um", "like", or filler words (the TTS will add natural pauses)

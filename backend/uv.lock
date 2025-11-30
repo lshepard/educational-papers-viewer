@@ -587,6 +587,15 @@ wheels = [
 ]
 
 [[package]]
+name = "nest-asyncio"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/83/f8/51569ac65d696c8ecbee95938f89d4abf00f47d58d48f6fbabfe8f0baefe/nest_asyncio-1.6.0.tar.gz", hash = "sha256:6f172d5449aca15afd6c646851f4e31e02c598d553a667e38cafa997cfec55fe", size = 7418 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c", size = 5195 },
+]
+
+[[package]]
 name = "packaging"
 version = "25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -610,6 +619,7 @@ dependencies = [
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "semanticscholar" },
     { name = "supabase" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -634,6 +644,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.1" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-multipart", specifier = ">=0.0.18" },
+    { name = "semanticscholar", specifier = ">=0.9.0" },
     { name = "supabase", specifier = ">=2.11.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
@@ -1166,6 +1177,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/da/8a/22b7beea3ee0d44b1916c0c1cb0ee3af23b700b6da9f04991899d0c555d4/rsa-4.9.1.tar.gz", hash = "sha256:e7bdbfdb5497da4c07dfd35530e1a902659db6ff241e39d9953cad06ebd0ae75", size = 29034 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/8d/0133e4eb4beed9e425d9a98ed6e081a55d195481b7632472be1af08d2f6b/rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762", size = 34696 },
+]
+
+[[package]]
+name = "semanticscholar"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nest-asyncio" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/5c/18302aad8f094b3e4b8bb79ee82dd0fafceee7811f9844c41f393f8a0e5f/semanticscholar-0.11.0.tar.gz", hash = "sha256:91e1233aedbf8e290daf8556fc7a3a6a6db78fe833adee88fd99ddb0a07a0c17", size = 28283 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/af/0627cf6bb64054d03a1fe8e9b0e659b496794000c30ba4fb921ca8aef20a/semanticscholar-0.11.0-py3-none-any.whl", hash = "sha256:824b7c3d11237ec829a211480ed1ed05f4ee9dfdf03e226b04c3d2051ea19b6e", size = 26048 },
 ]
 
 [[package]]
