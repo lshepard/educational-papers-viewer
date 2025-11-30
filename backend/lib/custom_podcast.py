@@ -15,7 +15,6 @@ from google import genai
 from google.genai import types
 from supabase import Client
 
-from .storage import upload_audio_to_storage, get_public_url
 from .podcast_generator import generate_audio_from_script
 
 logger = logging.getLogger(__name__)
@@ -325,19 +324,17 @@ async def generate_custom_themed_episode(
             logger.info("Uploading audio to storage...")
             storage_path = f"custom-episodes/{episode_id}.mp3"
 
-            upload_audio_to_storage(
-                supabase=supabase,
-                audio_data=mp3_data,
-                storage_path=storage_path,
-                bucket_name="podcast-audio"
+            supabase.storage.from_("episodes").upload(
+                path=storage_path,
+                file=mp3_data,
+                file_options={
+                    "content-type": "audio/mpeg",
+                    "upsert": "true"
+                }
             )
 
             # Get public URL
-            audio_url = get_public_url(
-                supabase=supabase,
-                storage_path=storage_path,
-                bucket_name="podcast-audio"
-            )
+            audio_url = supabase.storage.from_("episodes").get_public_url(storage_path)
 
             logger.info(f"Audio uploaded: {audio_url}")
 
