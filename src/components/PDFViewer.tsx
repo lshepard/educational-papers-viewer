@@ -6,6 +6,7 @@ import 'react-pdf/dist/Page/TextLayer.css'
 import { GenaiPaper, supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import PaperUploadEdit from './PaperUploadEdit'
+import { PodcastService, PodcastEpisode } from '../services/podcastService'
 import config from '../config'
 
 // Set up the worker for react-pdf - use matching version from unpkg
@@ -41,6 +42,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [activeTab, setActiveTab] = useState<ViewTab>('content')
   const [extracting, setExtracting] = useState<boolean>(false)
   const [extractionMessage, setExtractionMessage] = useState<string | null>(null)
+  const [podcastEpisode, setPodcastEpisode] = useState<PodcastEpisode | null>(null)
+  const [generatingPodcast, setGeneratingPodcast] = useState<boolean>(false)
+  const [podcastStatus, setPodcastStatus] = useState<string>('')
   const { user } = useAuth()
 
   const loadContent = useCallback(async () => {
@@ -108,10 +112,45 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     }
   }, [paper.id])
 
+  const loadPodcastEpisode = useCallback(async () => {
+    try {
+      const episode = await PodcastService.getEpisodeByPaperId(paper.id)
+      setPodcastEpisode(episode)
+    } catch (err) {
+      console.error('Failed to load podcast episode:', err)
+    }
+  }, [paper.id])
+
+  const handleGeneratePodcast = async () => {
+    if (generatingPodcast) return
+
+    setGeneratingPodcast(true)
+    setPodcastStatus('Starting generation... (this takes 2-5 minutes)')
+
+    try {
+      const response = await PodcastService.generatePodcast(paper.id)
+
+      // Reload episode after generation
+      await loadPodcastEpisode()
+      setPodcastStatus('Podcast generated successfully!')
+
+      // Open audio in new tab if available
+      if (response.audio_url) {
+        window.open(response.audio_url, '_blank')
+      }
+    } catch (err) {
+      console.error('Failed to generate podcast:', err)
+      setPodcastStatus('Failed to generate podcast: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setGeneratingPodcast(false)
+    }
+  }
+
   React.useEffect(() => {
     loadContent()
     loadImages()
-  }, [loadContent, loadImages])
+    loadPodcastEpisode()
+  }, [loadContent, loadImages, loadPodcastEpisode])
 
   const getImageUrl = (image: PaperImage): string => {
     const bucket = paper.storage_bucket || 'papers'
@@ -373,6 +412,40 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
                 </a>
               </p>
             </div>
+
+            {/* Podcast section - Admin only */}
+            {user && (
+              <div className="metadata-section">
+                <h3>Podcast</h3>
+                {podcastEpisode?.generation_status === 'completed' && podcastEpisode?.audio_url && (
+                  <p>
+                    <a href={podcastEpisode.audio_url} target="_blank" rel="noopener noreferrer" className="external-link">
+                      Listen to Podcast
+                    </a>
+                  </p>
+                )}
+                {podcastEpisode?.generation_status === 'processing' && (
+                  <p className="podcast-status processing">Generating podcast...</p>
+                )}
+                {podcastEpisode?.generation_status === 'failed' && (
+                  <p className="podcast-status failed">Generation failed</p>
+                )}
+                {!podcastEpisode && paper.file_kind === 'pdf' && (
+                  <>
+                    <button
+                      onClick={handleGeneratePodcast}
+                      className="podcast-btn"
+                      disabled={generatingPodcast}
+                    >
+                      {generatingPodcast ? 'Generating...' : 'Add to Podcast'}
+                    </button>
+                    {podcastStatus && (
+                      <p className="podcast-status">{podcastStatus}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Image count info */}
             {images.length > 0 && (

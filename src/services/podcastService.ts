@@ -60,6 +60,32 @@ export class PodcastService {
   }
 
   /**
+   * Get podcast episode for a specific paper
+   *
+   * @param paperId - The ID of the paper
+   * @returns The podcast episode if it exists, null otherwise
+   */
+  static async getEpisodeByPaperId(paperId: string): Promise<PodcastEpisode | null> {
+    try {
+      const response = await fetch(`${config.backendUrl}/podcast/episodes`)
+      if (!response.ok) {
+        return null
+      }
+
+      const data = await response.json()
+      if (data.success && data.episodes) {
+        const episode = data.episodes.find((ep: PodcastEpisode) => ep.paper_id === paperId)
+        return episode || null
+      }
+
+      return null
+    } catch (error) {
+      console.error('Failed to fetch podcast episode:', error)
+      return null
+    }
+  }
+
+  /**
    * Get the podcast RSS feed URL
    *
    * @returns The URL to the RSS feed
