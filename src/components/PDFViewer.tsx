@@ -6,7 +6,6 @@ import 'react-pdf/dist/Page/TextLayer.css'
 import { GenaiPaper, supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import PaperUploadEdit from './PaperUploadEdit'
-import { PodcastService } from '../services/podcastService'
 import config from '../config'
 
 // Set up the worker for react-pdf - use matching version from unpkg
@@ -28,13 +27,6 @@ interface PaperImage {
   created_at: string
 }
 
-interface PodcastEpisode {
-  id: string
-  paper_id: string
-  audio_url: string | null
-  generation_status: 'pending' | 'processing' | 'completed' | 'failed'
-}
-
 type ViewTab = 'content' | 'images';
 
 const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
@@ -49,9 +41,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [activeTab, setActiveTab] = useState<ViewTab>('content')
   const [extracting, setExtracting] = useState<boolean>(false)
   const [extractionMessage, setExtractionMessage] = useState<string | null>(null)
-  const [podcastEpisode, setPodcastEpisode] = useState<PodcastEpisode | null>(null)
-  const [generatingPodcast, setGeneratingPodcast] = useState<boolean>(false)
-  const [podcastStatus, setPodcastStatus] = useState<string>('')
   const { user } = useAuth()
 
   const loadContent = useCallback(async () => {
@@ -119,43 +108,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     }
   }, [paper.id])
 
-  const loadPodcastEpisode = useCallback(async () => {
-    try {
-      const episode = await PodcastService.getEpisodeByPaperId(paper.id)
-      setPodcastEpisode(episode)
-    } catch (err) {
-      console.error('Failed to load podcast episode:', err)
-    }
-  }, [paper.id])
-
-  const handleGeneratePodcast = async () => {
-    if (generatingPodcast) return
-
-    setGeneratingPodcast(true)
-    setPodcastStatus('Starting generation...')
-
-    try {
-      await PodcastService.generatePodcast(
-        paper.id,
-        (status) => setPodcastStatus(status)
-      )
-
-      // Reload episode after generation
-      await loadPodcastEpisode()
-      setPodcastStatus('Podcast generated successfully!')
-    } catch (err) {
-      console.error('Failed to generate podcast:', err)
-      setPodcastStatus('Failed to generate podcast')
-    } finally {
-      setGeneratingPodcast(false)
-    }
-  }
-
   React.useEffect(() => {
     loadContent()
     loadImages()
-    loadPodcastEpisode()
-  }, [loadContent, loadImages, loadPodcastEpisode])
+  }, [loadContent, loadImages])
 
   const getImageUrl = (image: PaperImage): string => {
     const bucket = paper.storage_bucket || 'papers'
@@ -416,45 +372,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
                   View Original Source
                 </a>
               </p>
-            </div>
-
-            {/* Podcast section */}
-            <div className="metadata-section">
-              <h3>Podcast</h3>
-              {podcastEpisode?.generation_status === 'completed' && podcastEpisode?.audio_url && (
-                <p>
-                  <a
-                    href={podcastEpisode.audio_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="podcast-link"
-                  >
-                    🎧 Listen to Podcast
-                  </a>
-                </p>
-              )}
-              {podcastEpisode?.generation_status === 'processing' && (
-                <p className="podcast-status processing">
-                  ⏳ Generating podcast...
-                </p>
-              )}
-              {podcastEpisode?.generation_status === 'failed' && user && (
-                <p className="podcast-status failed">
-                  ❌ Generation failed
-                </p>
-              )}
-              {user && !podcastEpisode && paper.file_kind === 'pdf' && (
-                <button
-                  onClick={handleGeneratePodcast}
-                  className="podcast-btn"
-                  disabled={generatingPodcast}
-                >
-                  {generatingPodcast ? podcastStatus || 'Generating...' : '🎙️ Generate Podcast'}
-                </button>
-              )}
-              {!podcastEpisode && !user && (
-                <p className="no-podcast">No podcast available yet</p>
-              )}
             </div>
 
             {/* Image count info */}

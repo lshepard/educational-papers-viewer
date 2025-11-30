@@ -1,37 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { GenaiPaper } from '../supabase'
 import { PapersService } from '../services/papersService'
-import { PodcastService } from '../services/podcastService'
-import { useAuth } from '../contexts/AuthContext'
-import config from '../config'
 
 interface PapersListProps {
   onSelectPaper: (paper: GenaiPaper) => void
 }
 
-interface PodcastEpisode {
-  id: string
-  paper_id: string
-  audio_url: string | null
-  generation_status: 'pending' | 'processing' | 'completed' | 'failed'
-}
-
 const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
-  const { user } = useAuth()
   const [papers, setPapers] = useState<GenaiPaper[]>([])
   const [filteredPapers, setFilteredPapers] = useState<GenaiPaper[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [fileKindFilter, setFileKindFilter] = useState<string>('')
   const [yearFilter, setYearFilter] = useState<string>('')
-  const [generatingPodcast, setGeneratingPodcast] = useState<Record<string, boolean>>({})
-  const [podcastStatus, setPodcastStatus] = useState<Record<string, string>>({})
-  const [podcastEpisodes, setPodcastEpisodes] = useState<Record<string, PodcastEpisode>>({})
 
   useEffect(() => {
     fetchPapers()
-    fetchPodcastEpisodes()
   }, [])
 
   const fetchPapers = async () => {
@@ -39,29 +22,10 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
       const data = await PapersService.getAllPapers()
       setPapers(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch papers')
-    } finally {
-      setLoading(false)
+      console.error('Failed to fetch papers:', err)
     }
   }
 
-  const fetchPodcastEpisodes = async () => {
-    try {
-      const response = await fetch(`${config.backendUrl}/podcast/episodes`)
-      const data = await response.json()
-
-      if (data.success && data.episodes) {
-        // Create a map of paper_id -> episode for quick lookup
-        const episodesMap: Record<string, PodcastEpisode> = {}
-        data.episodes.forEach((episode: PodcastEpisode) => {
-          episodesMap[episode.paper_id] = episode
-        })
-        setPodcastEpisodes(episodesMap)
-      }
-    } catch (err) {
-      console.error('Failed to fetch podcast episodes:', err)
-    }
-  }
 
   const filterPapers = useCallback(() => {
     let filtered = papers
@@ -102,42 +66,6 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
     return years
   }
 
-  const handleGeneratePodcast = async (paperId: string) => {
-    try {
-      setGeneratingPodcast(prev => ({ ...prev, [paperId]: true }))
-      setPodcastStatus(prev => ({ ...prev, [paperId]: 'Generating... (2-5 min)' }))
-
-      // Generate podcast (synchronous, takes 2-5 minutes)
-      const response = await PodcastService.generatePodcast(paperId)
-
-      // Success!
-      setPodcastStatus(prev => ({ ...prev, [paperId]: 'Completed!' }))
-
-      // Refresh podcast episodes list
-      await fetchPodcastEpisodes()
-
-      // Open audio in new tab
-      if (response.audio_url) {
-        window.open(response.audio_url, '_blank')
-      }
-
-      // Reset status after 3 seconds
-      setTimeout(() => {
-        setPodcastStatus(prev => ({ ...prev, [paperId]: '' }))
-      }, 3000)
-    } catch (error) {
-      console.error('Failed to generate podcast:', error)
-      setPodcastStatus(prev => ({
-        ...prev,
-        [paperId]: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      }))
-    } finally {
-      setGeneratingPodcast(prev => ({ ...prev, [paperId]: false }))
-    }
-  }
-
-  if (loading) return <div className="loading">Loading papers...</div>
-  if (error) return <div className="error">Error: {error}</div>
 
   return (
     <div className="papers-list">
