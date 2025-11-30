@@ -161,13 +161,29 @@ async def generate_themed_script(
 
 **Theme:** {theme}
 
-You have {len(papers_content)} research papers to discuss. Your goal is to create a natural, engaging conversation between two hosts (Alex and Jordan) that:
+You have {len(papers_content)} research papers to discuss. Your goal is to create a natural, engaging conversation between two hosts (Alex and Jordan).
 
-1. Introduces the theme and why it's important
-2. Discusses each paper's contributions to understanding this theme
-3. Explores connections and relationships between the papers
-4. Highlights agreements, disagreements, or complementary findings
-5. Discusses implications and future directions
+**Episode Structure:**
+
+1. **Opening & Theme Exposition (3-5 minutes)**
+   - Start with an engaging introduction to the theme
+   - Explain why this theme is important and relevant today
+   - Provide historical context or current developments in this area
+   - Give an overview of how the selected papers collectively address this theme
+   - Preview the key questions and insights the episode will explore
+
+2. **Paper Discussions (10-15 minutes)**
+   - Present papers in order of their importance/influence to the theme
+   - For each paper: explain its contribution, methodology, and key findings
+   - Connect each paper back to the central theme
+   - Highlight how papers build on, complement, or contrast with each other
+   - Use transitions to show relationships between papers
+
+3. **Synthesis & Conclusion (2-3 minutes)**
+   - Tie all papers together, showing the bigger picture
+   - Discuss implications for the field and real-world applications
+   - Highlight remaining questions and future directions
+   - End with key takeaways
 
 **Important Guidelines:**
 - Target 15-20 minutes of audio (approximately 2500-3500 words)
@@ -175,10 +191,10 @@ You have {len(papers_content)} research papers to discuss. Your goal is to creat
 - Use natural dialogue with questions, reactions, and insights
 - Explain technical concepts in accessible ways
 - Show enthusiasm and curiosity about the research
-- Connect the papers to real-world applications when possible
-- End with key takeaways and future outlook
+- Order papers by importance/influence, not chronologically
+- Create smooth transitions that highlight connections between papers
 
-**Papers to Discuss:**
+**Papers to Discuss (order by importance):**
 
 {papers_text}
 
