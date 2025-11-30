@@ -16,7 +16,7 @@ from google.genai import types
 from supabase import Client
 
 from .storage import upload_audio_to_storage, get_public_url
-from .podcast_generator import convert_audio_to_mp3
+from .podcast_generator import generate_audio_from_script
 
 logger = logging.getLogger(__name__)
 
@@ -297,41 +297,13 @@ async def generate_custom_themed_episode(
 
         logger.info("Script generated, creating audio...")
 
-        # Generate audio using Gemini TTS
-        logger.info("Generating audio with Gemini 2.5 Pro TTS...")
-
-        # Use multi-voice TTS
+        # Generate audio using shared function
         try:
-            response = genai_client.models.generate_content(
-                model="gemini-2.5-pro-preview-tts",
-                contents=script,
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name="Puck"
-                            )
-                        )
-                    )
-                )
+            mp3_data = generate_audio_from_script(
+                script_text=script,
+                genai_client=genai_client,
+                speaker_names=['Alex', 'Jordan']
             )
-
-            # Extract audio
-            audio_data = None
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    audio_data = part.inline_data.data
-                    break
-
-            if not audio_data:
-                raise ValueError("No audio data in response")
-
-            logger.info(f"Audio generated: {len(audio_data)} bytes")
-
-            # Convert to MP3
-            logger.info("Converting audio to MP3...")
-            mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
 
             # Upload to storage
             logger.info("Uploading audio to storage...")

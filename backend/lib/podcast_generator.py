@@ -23,6 +23,124 @@ from lib.research import create_research_agent
 logger = logging.getLogger(__name__)
 
 
+def generate_audio_from_script(
+    script_text: str,
+    genai_client: genai.Client,
+    speaker_names: List[str] = None
+) -> bytes:
+    """
+    Generate audio from script text using Gemini TTS and convert to MP3.
+
+    Args:
+        script_text: The podcast script text
+        genai_client: Gemini AI client
+        speaker_names: Optional list of speaker names (e.g., ['Alex', 'Sam'])
+
+    Returns:
+        MP3-encoded audio bytes
+    """
+    try:
+        logger.info("Generating audio with Gemini 2.5 Pro TTS...")
+
+        # Configure multi-speaker if speaker names provided
+        if speaker_names and len(speaker_names) >= 2:
+            config = types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                        speaker_voice_configs=[
+                            types.SpeakerVoiceConfig(
+                                speaker=speaker_names[0],
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name='Kore'
+                                    )
+                                )
+                            ),
+                            types.SpeakerVoiceConfig(
+                                speaker=speaker_names[1],
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name='Puck'
+                                    )
+                                )
+                            ),
+                        ]
+                    )
+                ),
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+            )
+        else:
+            # Single voice config
+            config = types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name="Puck"
+                        )
+                    )
+                )
+            )
+
+        # Generate audio
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-pro-preview-tts",
+            contents=script_text,
+            config=config
+        )
+
+        # Extract audio data from response
+        audio_data = None
+        audio_mime_type = None
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    audio_data = part.inline_data.data
+                    audio_mime_type = getattr(part.inline_data, 'mime_type', 'audio/wav')
+                    break
+
+        if not audio_data:
+            raise ValueError("No audio data in Gemini response")
+
+        logger.info(f"Audio generated, size: {len(audio_data)} bytes, mime_type: {audio_mime_type}")
+
+        # Convert to MP3 if not already MP3
+        if audio_mime_type == 'audio/mpeg' or audio_mime_type == 'audio/mp3':
+            logger.info("Audio already in MP3 format")
+            return audio_data
+        else:
+            logger.info(f"Converting audio from {audio_mime_type} to MP3...")
+
+            # Parse mime type to determine format and parameters
+            if 'L16' in audio_mime_type or 'pcm' in audio_mime_type.lower():
+                # Raw PCM format
+                source_format = 'pcm'
+                # Extract sample rate from mime type (e.g., "rate=24000")
+                sample_rate = 24000  # Default
+                if 'rate=' in audio_mime_type:
+                    rate_match = re.search(r'rate=(\d+)', audio_mime_type)
+                    if rate_match:
+                        sample_rate = int(rate_match.group(1))
+                        logger.info(f"Detected sample rate: {sample_rate} Hz")
+
+                mp3_data = convert_audio_to_mp3(
+                    audio_data,
+                    source_format='pcm',
+                    sample_rate=sample_rate
+                )
+            else:
+                # Try WAV format
+                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
+
+            logger.info("Audio converted to MP3")
+            return mp3_data
+
+    except Exception as e:
+        logger.error(f"Failed to generate audio: {e}", exc_info=True)
+        raise
+
+
 def convert_audio_to_mp3(audio_data: bytes, source_format: str = 'wav', sample_rate: int = 24000, channels: int = 1) -> bytes:
     """
     Convert audio data to MP3 format.
@@ -216,83 +334,12 @@ Focus on making the content digestible, honest, and interesting for casual liste
         logger.info(f"Generated script ({len(script_text)} characters)")
         logger.debug(f"Script preview: {script_text[:200]}...")
 
-        # Generate audio using Gemini 2.5 Pro native TTS
-        logger.info("Generating audio with Gemini 2.5 Pro native TTS...")
-
-        # Generate audio with multi-speaker configuration
-        response = genai_client.models.generate_content(
-            model="gemini-2.5-pro-preview-tts",
-            contents=script_text,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
-                        speaker_voice_configs=[
-                            types.SpeakerVoiceConfig(
-                                speaker='Alex',
-                                voice_config=types.VoiceConfig(
-                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                        voice_name='Kore',  # Firm, conversational
-                                    )
-                                )
-                            ),
-                            types.SpeakerVoiceConfig(
-                                speaker='Sam',
-                                voice_config=types.VoiceConfig(
-                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                        voice_name='Puck',  # Upbeat, engaging
-                                    )
-                                )
-                            ),
-                        ]
-                    )
-                ),
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
-            )
+        # Generate audio using shared function with multi-speaker support
+        mp3_data = generate_audio_from_script(
+            script_text=script_text,
+            genai_client=genai_client,
+            speaker_names=['Alex', 'Sam']
         )
-
-        # Extract audio data from response
-        audio_data = None
-        audio_mime_type = None
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    audio_data = part.inline_data.data
-                    audio_mime_type = getattr(part.inline_data, 'mime_type', 'audio/wav')
-                    break
-
-        if not audio_data:
-            raise HTTPException(status_code=500, detail="No audio data in Gemini response")
-
-        logger.info(f"Audio generated, size: {len(audio_data)} bytes, mime_type: {audio_mime_type}")
-
-        # Convert to MP3 if not already MP3
-        if audio_mime_type == 'audio/mpeg' or audio_mime_type == 'audio/mp3':
-            logger.info("Audio already in MP3 format")
-            mp3_data = audio_data
-        else:
-            logger.info(f"Converting audio from {audio_mime_type} to MP3...")
-
-            # Parse mime type to determine format and parameters
-            if 'L16' in audio_mime_type or 'pcm' in audio_mime_type.lower():
-                # Raw PCM format
-                source_format = 'pcm'
-                # Extract sample rate from mime type (e.g., "rate=24000")
-                sample_rate = 24000  # Default
-                if 'rate=' in audio_mime_type:
-                    rate_match = re.search(r'rate=(\d+)', audio_mime_type)
-                    if rate_match:
-                        sample_rate = int(rate_match.group(1))
-
-                mp3_data = convert_audio_to_mp3(audio_data, source_format='pcm', sample_rate=sample_rate, channels=1)
-            elif audio_mime_type == 'audio/wav' or audio_mime_type == 'audio/x-wav':
-                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
-            else:
-                # Unknown format, try as WAV
-                logger.warning(f"Unknown audio mime type: {audio_mime_type}, trying as WAV")
-                mp3_data = convert_audio_to_mp3(audio_data, source_format='wav')
-
-            logger.info(f"Converted to MP3, size: {len(mp3_data)} bytes")
 
         # Upload audio to Supabase storage as MP3
         filename = f"{episode_id}.mp3"
