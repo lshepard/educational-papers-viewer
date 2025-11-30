@@ -1,4 +1,6 @@
 -- Create junction table for many-to-many relationship between episodes and papers
+-- This allows custom themed episodes to include multiple papers
+
 CREATE TABLE IF NOT EXISTS episode_papers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     episode_id UUID NOT NULL REFERENCES podcast_episodes(id) ON DELETE CASCADE,
@@ -17,9 +19,9 @@ CREATE TABLE IF NOT EXISTS episode_papers (
 );
 
 -- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_episode_papers_episode_id ON episode_papers(episode_id);
-CREATE INDEX IF NOT EXISTS idx_episode_papers_paper_id ON episode_papers(paper_id);
-CREATE INDEX IF NOT EXISTS idx_episode_papers_semantic_scholar_id ON episode_papers(semantic_scholar_id);
+CREATE INDEX idx_episode_papers_episode_id ON episode_papers(episode_id);
+CREATE INDEX idx_episode_papers_paper_id ON episode_papers(paper_id);
+CREATE INDEX idx_episode_papers_semantic_scholar_id ON episode_papers(semantic_scholar_id);
 
 -- Add a flag to podcast_episodes to indicate if it's a custom multi-paper episode
 ALTER TABLE podcast_episodes
@@ -29,7 +31,9 @@ ADD COLUMN IF NOT EXISTS is_multi_paper BOOLEAN DEFAULT FALSE;
 ALTER TABLE podcast_episodes
 ALTER COLUMN paper_id DROP NOT NULL;
 
-COMMENT ON TABLE episode_papers IS 'Junction table for many-to-many relationship between podcast episodes and papers';
+-- Add comments for documentation
+COMMENT ON TABLE episode_papers IS 'Junction table for many-to-many relationship between podcast episodes and papers. Supports both local database papers and external Semantic Scholar papers.';
 COMMENT ON COLUMN episode_papers.paper_id IS 'Reference to paper in our database (nullable for external papers)';
 COMMENT ON COLUMN episode_papers.semantic_scholar_id IS 'Semantic Scholar paper ID for external papers';
 COMMENT ON COLUMN episode_papers.display_order IS 'Order in which papers should be displayed/discussed in the episode';
+COMMENT ON COLUMN podcast_episodes.is_multi_paper IS 'Flag indicating if this is a custom themed episode with multiple papers';
