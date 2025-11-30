@@ -20,8 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import google.generativeai as genai_old  # For PDF upload
-from google import genai  # For native audio TTS
+from google import genai
 from google.genai import types
 from supabase import create_client, Client
 import fitz  # PyMuPDF
@@ -48,7 +47,6 @@ if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY]):
     raise ValueError("Missing required environment variables")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-genai_old.configure(api_key=GEMINI_API_KEY)
 
 
 def convert_audio_to_mp3(audio_data: bytes, source_format: str = 'wav', sample_rate: int = 24000, channels: int = 1) -> bytes:
@@ -929,10 +927,17 @@ async def _generate_podcast_from_paper(paper_id: str, episode_id: str = None) ->
             temp_file.write(pdf_content)
             temp_file_path = temp_file.name
 
-        # Upload to Gemini
+        # Upload to Gemini using Files API
         logger.info("Uploading PDF to Gemini...")
-        gemini_file = genai_old.upload_file(temp_file_path)
-        logger.info(f"File uploaded to Gemini: {gemini_file.name}")
+        genai_client = app.state.genai_client
+
+        # Upload file
+        with open(temp_file_path, 'rb') as f:
+            file_data = f.read()
+
+        upload_response = genai_client.files.upload(path=temp_file_path)
+        gemini_file_uri = upload_response.uri
+        logger.info(f"File uploaded to Gemini: {gemini_file_uri}")
 
         # Generate podcast script using Gemini
         logger.info("Generating podcast script...")
@@ -957,11 +962,18 @@ Alex: [continues conversation]
 
 Focus on making the content digestible and interesting for casual listeners."""
 
-        model = genai_old.GenerativeModel(
-            "gemini-3-pro-preview",
-            generation_config={"automatic_function_calling": {"disable": True}}
+        # Generate script with Gemini
+        script_response = genai_client.models.generate_content(
+            model="gemini-3-pro-preview",
+            contents=[
+                types.Part.from_uri(file_uri=gemini_file_uri, mime_type="application/pdf"),
+                script_prompt
+            ],
+            config=types.GenerateContentConfig(
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+            )
         )
-        script_response = model.generate_content([gemini_file, script_prompt])
+
         script_text = script_response.text
 
         logger.info(f"Generated script ({len(script_text)} characters)")
@@ -1116,9 +1128,11 @@ Focus on making the content digestible and interesting for casual listeners."""
             except Exception as e:
                 logger.warning(f"Could not delete temp file: {e}")
 
-        if gemini_file:
+        if 'gemini_file_uri' in locals() and gemini_file_uri:
             try:
-                gemini_file.delete()
+                # Extract file name from URI and delete
+                file_name = gemini_file_uri.split('/')[-1]
+                genai_client.files.delete(name=file_name)
             except Exception as e:
                 logger.warning(f"Could not delete Gemini file: {e}")
 
