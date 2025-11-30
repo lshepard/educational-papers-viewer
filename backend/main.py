@@ -1124,13 +1124,57 @@ Focus on making the content digestible, honest, and interesting for casual liste
         # Get public URL
         public_url = supabase.storage.from_("episodes").get_public_url(storage_path_audio)
 
-        # Create episode metadata
-        episode_title = f"Discussion: {paper.get('title', 'Untitled Paper')}"
-        episode_description = f"An AI-generated podcast discussing the research paper"
-        if paper.get('authors'):
-            episode_description += f" by {paper['authors']}"
-        if paper.get('year'):
-            episode_description += f" ({paper['year']})"
+        # Generate engaging episode metadata using Gemini
+        logger.info("Generating podcast metadata (title and description)...")
+        try:
+            metadata_prompt = f"""Generate an engaging podcast episode title and description for this research paper.
+
+Paper Title: {paper.get('title', 'Untitled Paper')}
+Authors: {paper.get('authors', 'Unknown')}
+Year: {paper.get('year', 'Unknown')}
+Source URL: {paper.get('source_url', '')}
+
+Research Context:
+{research_context['research_summary']}
+
+Generate a JSON response with:
+1. "title": A clickbait-style headline (40-80 characters) that captures what makes this paper interesting and worth listening to. Focus on the impact, novelty, or surprising findings. Don't just restate the academic title.
+
+2. "description": A compelling description with:
+   - First 1-2 sentences: A catchy hook that makes people want to listen
+   - Then: Links and details in this format:
+
+     📄 Read the paper: [source_url]
+     👥 Authors: [author names]
+     📅 Published: [year]
+
+     In this episode, we dive into [key topics covered]. Perfect for [target audience].
+
+Make it engaging and podcast-friendly, not academic!"""
+
+            metadata_response = genai_client.models.generate_content(
+                model='gemini-2.0-flash-exp',
+                contents=metadata_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+
+            metadata = json.loads(metadata_response.text)
+            episode_title = metadata.get("title", f"Discussion: {paper.get('title', 'Untitled Paper')}")
+            episode_description = metadata.get("description", f"An AI-generated podcast discussing the research paper by {paper.get('authors', 'Unknown')}")
+            logger.info(f"Generated podcast metadata - Title: {episode_title}")
+        except Exception as e:
+            # Fallback to simple metadata if generation fails
+            logger.warning(f"Failed to generate podcast metadata with Gemini, using fallback: {e}")
+            episode_title = f"Discussion: {paper.get('title', 'Untitled Paper')}"
+            episode_description = f"An AI-generated podcast discussing the research paper"
+            if paper.get('authors'):
+                episode_description += f" by {paper['authors']}"
+            if paper.get('year'):
+                episode_description += f" ({paper['year']})"
+            if paper.get('source_url'):
+                episode_description += f"\n\n📄 Read the paper: {paper['source_url']}"
 
         # Update episode record with script and audio
         supabase.table("podcast_episodes").update({
