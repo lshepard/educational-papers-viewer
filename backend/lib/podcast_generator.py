@@ -290,24 +290,45 @@ Create an engaging, conversational podcast discussion between two hosts about th
 - Host 1 (Alex): Enthusiastic and asks great questions
 - Host 2 (Sam): Knowledgeable and explains concepts clearly
 
-IMPORTANT: Start the episode with a brief introduction that sets the context:
-- Mention the paper title and authors
-- Note the authors' affiliations (if available in research context)
-- Be HONEST about the paper's significance: Is it highly influential (many citations)?
-  A well-recognized contribution? Or an emerging/newer work?
-- Briefly mention if the authors are established researchers with significant prior work,
-  or if they're newer to the field (based on the author background in research context)
-- Set expectations appropriately - don't oversell a minor paper, but do highlight genuine importance
+**EPISODE STRUCTURE:**
 
-The podcast should:
-- START with this context-setting introduction about the paper and authors
-- Incorporate the research context naturally into the discussion
-- Reference the paper's place in the field and important prior work when relevant
-- Be lighthearted and fun, but informative and HONEST
-- Discuss key findings, methodology, and real-world implications
-- Use natural, conversational language - NO "um", "like", or filler words (the TTS will add natural pauses)
-- Be about 3-5 minutes when spoken (roughly 450-750 words)
+1. **Opening Hook (30-60 seconds)**
+   - Start with a SNAPPY, engaging opening that hooks the listener
+   - Don't just state the paper title - create interest and curiosity
+   - Example: "What if I told you that a simple change in how we teach math could double student retention?"
+
+2. **Context & Importance (60-90 seconds)**
+   - Mention the paper title and authors naturally in conversation
+   - Note the authors' affiliations and background (if available)
+   - Explain WHY this paper matters - what problem does it solve? What gap does it fill?
+   - Be HONEST about significance: Is it highly influential? Novel? Incremental improvement?
+   - Draw from the background/introduction and results/discussion sections to explain importance
+   - Set appropriate expectations - don't oversell, but do highlight genuine contributions
+
+3. **The Study Details (90-120 seconds)**
+   - If the paper describes a specific experiment or system, tell the FULL STORY:
+     * How many participants/subjects? What were the conditions?
+     * What exactly did they do? Walk through the procedure step-by-step
+     * What was being measured? How?
+     * What were the controls/comparisons?
+   - Include 2-3 DIRECT QUOTES from the paper that capture key insights or findings
+     * Introduce quotes naturally: "The authors write that..." or "As they put it..."
+     * Choose quotes that are clear and impactful, not overly technical
+   - Explain the methodology in accessible terms
+
+4. **Key Findings & Implications (60-90 seconds)**
+   - What did they discover? What were the main results?
+   - Include at least one more DIRECT QUOTE about the findings or implications
+   - What does this mean for the field? For practice? For future research?
+   - Connect back to why this matters (from the opening)
+
+**IMPORTANT GUIDELINES:**
+- Use natural, conversational language - NO "um", "like", or filler words (TTS adds pauses)
+- Target 3-5 minutes when spoken (roughly 450-750 words)
 - Make complex topics accessible and engaging
+- Be lighthearted and fun, but informative and HONEST
+- Pull quotes DIRECTLY from the paper text - don't paraphrase when quoting
+- If there's a specific experiment/system, dedicate real time to explaining how it worked
 
 Format the script like this:
 Alex: [speaks naturally]
@@ -372,10 +393,19 @@ Research Context:
 {research_context['research_summary']}
 
 Generate a JSON response with:
-1. "title": A clickbait-style headline (40-80 characters) that captures what makes this paper interesting and worth listening to. Focus on the impact, novelty, or surprising findings. Don't just restate the academic title.
+1. "title": A SNAPPY, engaging headline (40-80 characters) that makes people want to listen.
+   - Focus on the IMPACT, the surprising finding, or the practical benefit
+   - Use active, punchy language - think podcast episode, not academic paper
+   - Examples of good vs bad:
+     ❌ Bad: "A Study on Math Education Interventions"
+     ✅ Good: "This Simple Math Trick Doubled Student Performance"
+     ❌ Bad: "Analysis of Teacher Feedback Methods"
+     ✅ Good: "Why Your Teacher's Praise Might Be Backfiring"
+   - Don't just restate the academic title - translate it into human interest
 
 2. "description": A compelling description with:
-   - First 1-2 sentences: A catchy hook that makes people want to listen
+   - First 1-2 sentences: A catchy hook that creates curiosity and makes people want to listen
+   - Highlight what's surprising, useful, or important about this research
    - Then: Links and details in this format:
 
      📄 Read the paper: [source_url]
