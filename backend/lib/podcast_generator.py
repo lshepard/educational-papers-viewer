@@ -506,44 +506,79 @@ Focus on making the content digestible, honest, and interesting for casual liste
 
         research_tools = types.Tool(function_declarations=function_declarations)
 
-        # Define function calling callback
-        def handle_function_call(fn_call):
-            if fn_call.name == "search_papers":
-                limit = fn_call.args.get("limit", 5)
-                return search_semantic_scholar_papers(
-                    query=fn_call.args["query"],
-                    limit=min(max(1, limit), 10)  # Clamp between 1-10
-                )
-            elif fn_call.name == "search_related_work":
-                return search_related_work_perplexity(
-                    query=fn_call.args["query"],
-                    perplexity_api_key=perplexity_api_key
-                )
-            return "Function not found"
-
         # Generate script with Gemini with function calling enabled
         tools_description = "Semantic Scholar search"
         if perplexity_api_key:
             tools_description += " + Perplexity research"
 
         logger.info(f"Generating script with research tools enabled: {tools_description}")
+
+        # Initial request with tools
+        messages = [
+            types.Part.from_uri(file_uri=gemini_file_uri, mime_type="application/pdf"),
+            script_prompt
+        ]
+
         config = types.GenerateContentConfig(
-            tools=[research_tools],
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                disable=False,
-                function_calling_callback=handle_function_call
+            tools=[research_tools]
+        )
+
+        # Manual function calling loop
+        max_iterations = 5  # Prevent infinite loops
+        for iteration in range(max_iterations):
+            script_response = genai_client.models.generate_content(
+                model="gemini-3-pro-preview",
+                contents=messages,
+                config=config
             )
-        )
 
-        script_response = genai_client.models.generate_content(
-            model="gemini-3-pro-preview",
-            contents=[
-                types.Part.from_uri(file_uri=gemini_file_uri, mime_type="application/pdf"),
-                script_prompt
-            ],
-            config=config
-        )
+            # Check if there are function calls in the response
+            function_calls = []
+            if script_response.candidates and script_response.candidates[0].content.parts:
+                for part in script_response.candidates[0].content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_calls.append(part.function_call)
 
+            # If no function calls, we're done
+            if not function_calls:
+                break
+
+            # Execute function calls and prepare responses
+            logger.info(f"Executing {len(function_calls)} function call(s) in iteration {iteration + 1}")
+
+            # Add assistant's response to messages
+            messages.append(script_response.candidates[0].content)
+
+            # Execute each function call and add results
+            for fn_call in function_calls:
+                logger.info(f"Calling function: {fn_call.name}")
+
+                # Execute the function
+                if fn_call.name == "search_papers":
+                    limit = fn_call.args.get("limit", 5)
+                    result = search_semantic_scholar_papers(
+                        query=fn_call.args["query"],
+                        limit=min(max(1, int(limit)), 10)  # Clamp between 1-10
+                    )
+                elif fn_call.name == "search_related_work":
+                    result = search_related_work_perplexity(
+                        query=fn_call.args["query"],
+                        perplexity_api_key=perplexity_api_key
+                    )
+                else:
+                    result = "Function not found"
+
+                # Add function response to messages
+                messages.append(
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            name=fn_call.name,
+                            response={"result": result}
+                        )
+                    )
+                )
+
+        # Extract final script text
         script_text = script_response.text
 
         logger.info(f"Generated script ({len(script_text)} characters)")
