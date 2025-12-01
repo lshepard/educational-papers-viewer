@@ -66,6 +66,67 @@ def search_related_work_perplexity(query: str, perplexity_api_key: str) -> str:
         return f"Search failed: {str(e)}"
 
 
+def search_semantic_scholar_papers(query: str, limit: int = 5) -> str:
+    """
+    Search for research papers on Semantic Scholar.
+
+    This function can be called by the podcast generation agent to find
+    specific papers, authors, or research topics for comparison and context.
+
+    Args:
+        query: Search query for papers, authors, or topics
+        limit: Maximum number of results to return (default: 5)
+
+    Returns:
+        JSON string with paper results including titles, authors, years, abstracts
+    """
+    try:
+        import httpx
+        import asyncio
+
+        async def do_search():
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://api.semanticscholar.org/graph/v1/paper/search",
+                    params={
+                        "query": query,
+                        "limit": limit,
+                        "fields": "paperId,title,authors,year,venue,citationCount,abstract,url"
+                    },
+                    timeout=30.0
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    papers = data.get("data", [])
+
+                    # Format results in a readable way
+                    results = []
+                    for paper in papers:
+                        result = {
+                            "title": paper.get("title", ""),
+                            "authors": ", ".join([a["name"] for a in paper.get("authors", [])]),
+                            "year": paper.get("year"),
+                            "venue": paper.get("venue", ""),
+                            "citations": paper.get("citationCount", 0),
+                            "abstract": paper.get("abstract", "")[:300] + "..." if paper.get("abstract") else ""
+                        }
+                        results.append(result)
+
+                    logger.info(f"Semantic Scholar search successful: {len(results)} papers found for query: {query[:100]}...")
+                    return json.dumps(results, indent=2)
+                else:
+                    logger.warning(f"Semantic Scholar search returned status {response.status_code}")
+                    return "No results found"
+
+        # Run async search
+        return asyncio.run(do_search())
+
+    except Exception as e:
+        logger.error(f"Semantic Scholar search failed: {e}")
+        return f"Search failed: {str(e)}"
+
+
 def generate_audio_from_script(
     script_text: str,
     genai_client: genai.Client,
@@ -375,12 +436,21 @@ Create an engaging, conversational podcast discussion between two hosts about th
 - If there's a specific experiment/system, dedicate real time to explaining how it worked
 
 **AVAILABLE TOOLS:**
-You have access to a `search_related_work` function that can search for:
-- Similar studies or related work in this field
-- Background information on methods or concepts
-- Examples of how this research builds on or differs from prior work
-- Real-world applications or implementations
-Use this tool as needed to enrich the discussion with broader context.
+You have access to research tools to enrich the discussion:
+
+1. `search_related_work` - Search for broader context and real-world applications:
+   - Similar studies or related work in this field
+   - Background information on methods or concepts
+   - Examples of how this research builds on or differs from prior work
+   - Real-world applications or implementations
+
+2. `search_papers` - Search Semantic Scholar for specific papers:
+   - Find papers by specific authors or topics
+   - Locate papers with similar methodologies
+   - Get citation counts and publication details
+   - Compare with related research
+
+Use these tools as needed to provide richer context and connections.
 
 Format the script like this:
 Alex: [speaks naturally]
@@ -390,12 +460,37 @@ Alex: [continues conversation]
 
 Focus on making the content digestible, honest, and interesting for casual listeners."""
 
-        # Define the Perplexity search tool for Gemini function calling
-        search_related_work_tool = types.Tool(
-            function_declarations=[
+        # Define research tools for Gemini function calling
+        function_declarations = []
+
+        # Add Semantic Scholar search tool (always available)
+        function_declarations.append(
+            types.FunctionDeclaration(
+                name="search_papers",
+                description="Search Semantic Scholar for research papers by title, author, topic, or methodology. Returns paper titles, authors, years, venues, citation counts, and abstracts.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "query": types.Schema(
+                            type=types.Type.STRING,
+                            description="Search query for papers, authors, or research topics"
+                        ),
+                        "limit": types.Schema(
+                            type=types.Type.INTEGER,
+                            description="Maximum number of results to return (1-10, default 5)"
+                        )
+                    },
+                    required=["query"]
+                )
+            )
+        )
+
+        # Add Perplexity search tool if API key is available
+        if perplexity_api_key:
+            function_declarations.append(
                 types.FunctionDeclaration(
                     name="search_related_work",
-                    description="Search for related research, similar studies, background information, or broader context about the research topic. Use this to find examples, comparisons, or real-world applications.",
+                    description="Search for related research, similar studies, background information, or broader context about the research topic. Use this to find examples, comparisons, real-world applications, or general background that might not be in academic databases.",
                     parameters=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
@@ -407,27 +502,38 @@ Focus on making the content digestible, honest, and interesting for casual liste
                         required=["query"]
                     )
                 )
-            ]
-        )
+            )
+
+        research_tools = types.Tool(function_declarations=function_declarations)
+
+        # Define function calling callback
+        def handle_function_call(fn_call):
+            if fn_call.name == "search_papers":
+                limit = fn_call.args.get("limit", 5)
+                return search_semantic_scholar_papers(
+                    query=fn_call.args["query"],
+                    limit=min(max(1, limit), 10)  # Clamp between 1-10
+                )
+            elif fn_call.name == "search_related_work":
+                return search_related_work_perplexity(
+                    query=fn_call.args["query"],
+                    perplexity_api_key=perplexity_api_key
+                )
+            return "Function not found"
 
         # Generate script with Gemini with function calling enabled
+        tools_description = "Semantic Scholar search"
         if perplexity_api_key:
-            logger.info("Generating script with Perplexity research tool enabled")
-            config = types.GenerateContentConfig(
-                tools=[search_related_work_tool],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=False,
-                    function_calling_callback=lambda fn_call: search_related_work_perplexity(
-                        query=fn_call.args["query"],
-                        perplexity_api_key=perplexity_api_key
-                    )
-                )
+            tools_description += " + Perplexity research"
+
+        logger.info(f"Generating script with research tools enabled: {tools_description}")
+        config = types.GenerateContentConfig(
+            tools=[research_tools],
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=False,
+                function_calling_callback=handle_function_call
             )
-        else:
-            logger.info("Generating script without Perplexity (API key not provided)")
-            config = types.GenerateContentConfig(
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
-            )
+        )
 
         script_response = genai_client.models.generate_content(
             model="gemini-3-pro-preview",
