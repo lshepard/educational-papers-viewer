@@ -1094,6 +1094,230 @@ async def generate_custom_episode(request: CustomEpisodeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================================
+# PODCAST CREATOR ENDPOINTS
+# Multi-step workflow for creating custom podcasts with research and clips
+# ============================================================================
+
+class CreateSessionRequest(BaseModel):
+    theme: str
+    description: Optional[str] = None
+    resource_links: List[str] = []
+
+
+class ResearchChatRequest(BaseModel):
+    message: str
+
+
+class YouTubeSearchRequest(BaseModel):
+    query: str
+    max_results: int = 10
+
+
+class SaveClipRequest(BaseModel):
+    video_id: str
+    video_title: str
+    channel_name: str
+    start_time: float
+    end_time: float
+    clip_purpose: str
+    quote_text: Optional[str] = None
+
+
+@app.post("/podcast-creator/sessions")
+async def create_podcast_creator_session(request: CreateSessionRequest):
+    """Create a new podcast creator session."""
+    try:
+        session_data = {
+            "theme": request.theme,
+            "description": request.description,
+            "resource_links": request.resource_links,
+            "status": "research",
+            "current_step": 1
+        }
+
+        response = supabase.table("podcast_creator_sessions").insert(session_data).execute()
+        session = response.data[0]
+
+        logger.info(f"Created podcast creator session: {session['id']}")
+
+        return {
+            "success": True,
+            "session": session
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to create session: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/podcast-creator/sessions/{session_id}")
+async def get_podcast_creator_session(session_id: str):
+    """Get podcast creator session with all related data."""
+    try:
+        # Get session
+        session_response = supabase.table("podcast_creator_sessions").select("*").eq(
+            "id", session_id
+        ).single().execute()
+
+        session = session_response.data
+
+        # Get research messages
+        messages_response = supabase.table("creator_research_messages").select("*").eq(
+            "session_id", session_id
+        ).order("message_order").execute()
+
+        # Get clips
+        clips_response = supabase.table("creator_youtube_clips").select("*").eq(
+            "session_id", session_id
+        ).order("play_order").execute()
+
+        return {
+            "success": True,
+            "session": session,
+            "messages": messages_response.data,
+            "clips": clips_response.data
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get session: {e}", exc_info=True)
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+@app.post("/podcast-creator/sessions/{session_id}/research")
+async def research_chat(session_id: str, request: ResearchChatRequest):
+    """Conduct research chat with Perplexity and bias analysis."""
+    try:
+        from lib.podcast_creator import research_chat_with_perplexity
+
+        # Get session
+        session_response = supabase.table("podcast_creator_sessions").select("*").eq(
+            "id", session_id
+        ).single().execute()
+
+        session = session_response.data
+
+        # Get conversation history
+        messages_response = supabase.table("creator_research_messages").select(
+            "role, content"
+        ).eq("session_id", session_id).order("message_order").execute()
+
+        conversation_history = messages_response.data
+
+        # Call research function
+        result = await research_chat_with_perplexity(
+            session_id=session_id,
+            user_message=request.message,
+            conversation_history=conversation_history,
+            theme=session["theme"],
+            resource_links=session.get("resource_links", []),
+            perplexity_api_key=PERPLEXITY_API_KEY,
+            supabase=supabase
+        )
+
+        return {
+            "success": True,
+            **result
+        }
+
+    except Exception as e:
+        logger.error(f"Research chat failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/podcast-creator/sessions/{session_id}/youtube/search")
+async def search_youtube_videos(session_id: str, request: YouTubeSearchRequest):
+    """Search YouTube for videos."""
+    try:
+        from lib.youtube_clips import search_youtube
+
+        videos = await search_youtube(
+            query=request.query,
+            max_results=request.max_results
+        )
+
+        return {
+            "success": True,
+            "videos": videos
+        }
+
+    except Exception as e:
+        logger.error(f"YouTube search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/podcast-creator/sessions/{session_id}/clips")
+async def save_clip(session_id: str, request: SaveClipRequest):
+    """Save a YouTube clip selection and extract audio."""
+    try:
+        from lib.youtube_clips import save_clip_selection
+
+        clip_id = await save_clip_selection(
+            session_id=session_id,
+            video_id=request.video_id,
+            video_title=request.video_title,
+            channel_name=request.channel_name,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            clip_purpose=request.clip_purpose,
+            quote_text=request.quote_text,
+            supabase=supabase
+        )
+
+        return {
+            "success": True,
+            "clip_id": clip_id,
+            "message": "Clip saved and audio extraction started"
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to save clip: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/podcast-creator/sessions/{session_id}/show-notes/generate")
+async def generate_show_notes_endpoint(session_id: str):
+    """Generate show notes with quotes and clip markers."""
+    try:
+        from lib.podcast_creator import generate_show_notes
+
+        # Get session
+        session_response = supabase.table("podcast_creator_sessions").select("*").eq(
+            "id", session_id
+        ).single().execute()
+
+        session = session_response.data
+
+        # Get conversation history
+        messages_response = supabase.table("creator_research_messages").select(
+            "role, content"
+        ).eq("session_id", session_id).order("message_order").execute()
+
+        # Get clips
+        clips_response = supabase.table("creator_youtube_clips").select("*").eq(
+            "session_id", session_id
+        ).order("play_order").execute()
+
+        show_notes = await generate_show_notes(
+            session_id=session_id,
+            theme=session["theme"],
+            conversation_history=messages_response.data,
+            resource_links=session.get("resource_links", []),
+            selected_clips=clips_response.data,
+            genai_client=app.state.genai_client,
+            supabase=supabase
+        )
+
+        return {
+            "success": True,
+            "show_notes": show_notes
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to generate show notes: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/research/populate")
 async def populate_research_metadata(limit: Optional[int] = None, force_refresh: bool = False):
     """
