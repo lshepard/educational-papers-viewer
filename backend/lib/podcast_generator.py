@@ -185,20 +185,14 @@ def search_related_work_perplexity(query: str, perplexity_api_key: str) -> str:
     try:
         from perplexipy import PerplexityClient
 
-        client = PerplexityClient(api_key=perplexity_api_key)
+        # Note: PerplexityClient uses 'key' parameter, not 'api_key'
+        client = PerplexityClient(key=perplexity_api_key)
 
         # Use Perplexity to search for related work
-        response = client.chat_completion(
-            model="sonar",
-            messages=[{
-                "role": "user",
-                "content": query
-            }]
-        )
+        # The query() method returns the response directly as a string
+        result = client.query(query)
 
-        # Extract the response content
-        if response and response.choices and len(response.choices) > 0:
-            result = response.choices[0].message.content
+        if result and isinstance(result, str) and len(result) > 0:
             logger.info(f"Perplexity search successful for query: {query[:100]}...")
             return result
         else:
