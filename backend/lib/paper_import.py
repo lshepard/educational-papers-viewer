@@ -58,10 +58,10 @@ async def fetch_arxiv_metadata(arxiv_id: str) -> Optional[Dict[str, Any]]:
         Dictionary with title, authors, abstract, published date, etc.
     """
     try:
-        # Use arXiv API
-        api_url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
+        # Use arXiv API (must use https)
+        api_url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(api_url, timeout=30.0)
             response.raise_for_status()
 
@@ -247,17 +247,21 @@ async def import_paper_from_url(
         # Check if arXiv URL
         arxiv_id = await parse_arxiv_id(url)
         metadata = {}
+        pdf_url = url  # Will be overridden for arXiv papers
 
         if arxiv_id:
             logger.info(f"Detected arXiv paper: {arxiv_id}")
             arxiv_metadata = await fetch_arxiv_metadata(arxiv_id)
             if arxiv_metadata:
                 metadata = arxiv_metadata
-                url = arxiv_metadata["pdf_url"]  # Use arXiv PDF URL
+                pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"  # Construct proper PDF URL
+            else:
+                # Fallback if API fails
+                pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
 
         # Download PDF
         pdf_path = temp_path / "paper.pdf"
-        success = await download_pdf(url, pdf_path)
+        success = await download_pdf(pdf_url, pdf_path)
 
         if not success:
             raise ValueError("Failed to download PDF")
