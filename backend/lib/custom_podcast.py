@@ -69,26 +69,54 @@ async def fetch_paper_content(paper: Dict[str, Any], supabase: Client) -> Dict[s
             }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",
-                    params={
-                        "fields": "title,authors,year,venue,abstract"
-                    },
-                    timeout=30.0
-                )
+            import asyncio
 
-                if response.status_code == 200:
-                    data = response.json()
-                    return {
-                        "title": data.get("title", ""),
-                        "authors": ", ".join([a["name"] for a in data.get("authors", [])]),
-                        "year": data.get("year"),
-                        "abstract": data.get("abstract", ""),
-                        "venue": data.get("venue", ""),
-                        "key_findings": "",
-                        "methodology": ""
-                    }
+            max_retries = 3
+            base_delay = 1.0
+
+            async with httpx.AsyncClient() as client:
+                for attempt in range(max_retries):
+                    try:
+                        response = await client.get(
+                            f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",
+                            params={
+                                "fields": "title,authors,year,venue,abstract"
+                            },
+                            timeout=30.0
+                        )
+
+                        if response.status_code == 429:
+                            # Rate limited - retry with exponential backoff
+                            if attempt < max_retries - 1:
+                                delay = base_delay * (2 ** attempt)
+                                logger.warning(f"Rate limit hit fetching paper {paper_id}, retrying in {delay}s")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.warning(f"Rate limit exceeded for paper {paper_id}")
+                                break
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            return {
+                                "title": data.get("title", ""),
+                                "authors": ", ".join([a["name"] for a in data.get("authors", [])]),
+                                "year": data.get("year"),
+                                "abstract": data.get("abstract", ""),
+                                "venue": data.get("venue", ""),
+                                "key_findings": "",
+                                "methodology": ""
+                            }
+                        break  # Exit retry loop if not 429
+
+                    except httpx.TimeoutException:
+                        if attempt < max_retries - 1:
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(f"Timeout fetching paper {paper_id}, retrying in {delay}s")
+                            await asyncio.sleep(delay)
+                            continue
+                        break
+
         except Exception as e:
             logger.warning(f"Failed to fetch Semantic Scholar paper {paper_id}: {e}")
 
@@ -279,8 +307,13 @@ async def generate_custom_themed_episode(
         # Fetch content for all papers
         logger.info("Fetching paper content...")
         papers_content = []
-        for paper in papers:
+        for idx, paper in enumerate(papers):
             try:
+                # Add small delay between fetches to avoid rate limiting
+                if idx > 0:
+                    import asyncio
+                    await asyncio.sleep(0.5)
+
                 content = await fetch_paper_content(paper, supabase)
                 if content:
                     papers_content.append(content)

@@ -877,33 +877,62 @@ async def search_papers(q: str):
 async def search_semantic_scholar(q: str, limit: int = 10):
     """
     Search Semantic Scholar for papers.
-    Acts as a proxy to the Semantic Scholar API.
+    Acts as a proxy to the Semantic Scholar API with retry logic for rate limiting.
     """
     try:
         import httpx
+        import asyncio
 
-        # Search using Semantic Scholar API
+        max_retries = 3
+        base_delay = 1.0  # Start with 1 second delay
+
+        # Search using Semantic Scholar API with retry logic
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.semanticscholar.org/graph/v1/paper/search",
-                params={
-                    "query": q,
-                    "limit": limit,
-                    "fields": "paperId,title,authors,year,venue,citationCount,abstract,url"
-                },
-                timeout=30.0
-            )
+            for attempt in range(max_retries):
+                try:
+                    response = await client.get(
+                        "https://api.semanticscholar.org/graph/v1/paper/search",
+                        params={
+                            "query": q,
+                            "limit": limit,
+                            "fields": "paperId,title,authors,year,venue,citationCount,abstract,url"
+                        },
+                        timeout=30.0
+                    )
 
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Semantic Scholar API error")
+                    if response.status_code == 429:
+                        # Rate limited - retry with exponential backoff
+                        if attempt < max_retries - 1:
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(f"Semantic Scholar rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(delay)
+                            continue
+                        else:
+                            raise HTTPException(
+                                status_code=429,
+                                detail="Semantic Scholar API rate limit exceeded. Please try again in a moment."
+                            )
 
-            data = response.json()
+                    if response.status_code != 200:
+                        raise HTTPException(status_code=response.status_code, detail="Semantic Scholar API error")
 
-            return {
-                "success": True,
-                "papers": data.get("data", [])
-            }
+                    data = response.json()
 
+                    return {
+                        "success": True,
+                        "papers": data.get("data", [])
+                    }
+
+                except httpx.TimeoutException:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"Semantic Scholar timeout, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(delay)
+                        continue
+                    raise HTTPException(status_code=504, detail="Semantic Scholar API timeout")
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to search Semantic Scholar: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -921,51 +950,80 @@ async def fetch_citations(request: CitationsRequest):
     """
     try:
         import httpx
+        import asyncio
 
         all_citations = []
         seen_paper_ids = set()
 
         async with httpx.AsyncClient() as client:
-            for paper_id in request.paper_ids:
-                try:
-                    # Get paper details with references
-                    response = await client.get(
-                        f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",
-                        params={
-                            "fields": "references,references.paperId,references.title,references.authors,references.year,references.citationCount,references.venue"
-                        },
-                        timeout=30.0
-                    )
+            for idx, paper_id in enumerate(request.paper_ids):
+                # Add small delay between requests to avoid rate limiting
+                if idx > 0:
+                    await asyncio.sleep(0.5)
 
-                    if response.status_code == 200:
-                        data = response.json()
-                        references = data.get("references", [])
+                max_retries = 3
+                base_delay = 1.0
 
-                        # Filter for highly cited references (top 5 per paper)
-                        sorted_refs = sorted(
-                            references,
-                            key=lambda r: r.get("citationCount", 0),
-                            reverse=True
-                        )[:5]
+                for attempt in range(max_retries):
+                    try:
+                        # Get paper details with references
+                        response = await client.get(
+                            f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}",
+                            params={
+                                "fields": "references,references.paperId,references.title,references.authors,references.year,references.citationCount,references.venue"
+                            },
+                            timeout=30.0
+                        )
 
-                        for ref in sorted_refs:
-                            paper_id = ref.get("paperId")
-                            if paper_id and paper_id not in seen_paper_ids:
-                                seen_paper_ids.add(paper_id)
-                                all_citations.append({
-                                    "paperId": paper_id,
-                                    "title": ref.get("title", ""),
-                                    "authors": ref.get("authors", []),
-                                    "year": ref.get("year"),
-                                    "venue": ref.get("venue"),
-                                    "citationCount": ref.get("citationCount", 0),
-                                    "abstract": None,
-                                    "url": f"https://www.semanticscholar.org/paper/{paper_id}"
-                                })
+                        if response.status_code == 429:
+                            # Rate limited - retry with exponential backoff
+                            if attempt < max_retries - 1:
+                                delay = base_delay * (2 ** attempt)
+                                logger.warning(f"Rate limit hit for paper {paper_id}, retrying in {delay}s")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.warning(f"Rate limit exceeded for paper {paper_id}, skipping")
+                                break
 
-                except Exception as e:
-                    logger.warning(f"Failed to fetch citations for paper {paper_id}: {e}")
-                    continue
+                        if response.status_code == 200:
+                            data = response.json()
+                            references = data.get("references", [])
+
+                            # Filter for highly cited references (top 5 per paper)
+                            sorted_refs = sorted(
+                                references,
+                                key=lambda r: r.get("citationCount", 0),
+                                reverse=True
+                            )[:5]
+
+                            for ref in sorted_refs:
+                                ref_paper_id = ref.get("paperId")
+                                if ref_paper_id and ref_paper_id not in seen_paper_ids:
+                                    seen_paper_ids.add(ref_paper_id)
+                                    all_citations.append({
+                                        "paperId": ref_paper_id,
+                                        "title": ref.get("title", ""),
+                                        "authors": ref.get("authors", []),
+                                        "year": ref.get("year"),
+                                        "venue": ref.get("venue"),
+                                        "citationCount": ref.get("citationCount", 0),
+                                        "abstract": None,
+                                        "url": f"https://www.semanticscholar.org/paper/{ref_paper_id}"
+                                    })
+                        break  # Success - exit retry loop
+
+                    except httpx.TimeoutException:
+                        if attempt < max_retries - 1:
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(f"Timeout for paper {paper_id}, retrying in {delay}s")
+                            await asyncio.sleep(delay)
+                            continue
+                        logger.warning(f"Timeout for paper {paper_id}, skipping")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch citations for paper {paper_id}: {e}")
+                        break
 
         # Sort by citation count and return top 10
         all_citations.sort(key=lambda p: p["citationCount"], reverse=True)
