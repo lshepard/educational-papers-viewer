@@ -1078,7 +1078,8 @@ async def generate_custom_episode(request: CustomEpisodeRequest):
             theme=request.theme,
             papers=request.papers,
             supabase=supabase,
-            genai_client=genai_client
+            genai_client=genai_client,
+            perplexity_api_key=PERPLEXITY_API_KEY
         )
 
         return CustomEpisodeResponse(

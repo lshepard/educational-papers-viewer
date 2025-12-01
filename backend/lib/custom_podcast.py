@@ -9,13 +9,13 @@ import logging
 import tempfile
 import os
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from google import genai
 from google.genai import types
 from supabase import Client
 
-from .podcast_generator import generate_audio_from_script
+from .podcast_generator import generate_audio_from_script, generate_script_with_research_tools
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,8 @@ def format_paper_for_prompt(paper_content: Dict[str, Any]) -> str:
 async def generate_themed_script(
     theme: str,
     papers_content: List[Dict[str, Any]],
-    genai_client: genai.Client
+    genai_client: genai.Client,
+    perplexity_api_key: Optional[str] = None
 ) -> str:
     """
     Generate a podcast script discussing multiple papers around a theme.
@@ -176,6 +177,7 @@ async def generate_themed_script(
         theme: The central theme/topic for discussion
         papers_content: List of paper content dicts
         genai_client: Gemini API client
+        perplexity_api_key: Optional Perplexity API key for research tools
 
     Returns:
         Generated script text
@@ -221,6 +223,14 @@ You have {len(papers_content)} research papers to discuss. Your goal is to creat
 - Order papers by importance/influence, not chronologically
 - Create smooth transitions that highlight connections between papers
 
+**AVAILABLE TOOLS:**
+You have access to research tools to enrich the discussion:
+
+1. `search_related_work` - Search for broader context and real-world applications about the theme or papers
+2. `search_papers` - Search Semantic Scholar for additional relevant papers or context
+
+Use these tools as needed to provide richer context and connections.
+
 **Papers to Discuss (order by importance):**
 
 {papers_text}
@@ -234,12 +244,16 @@ Start the script now:"""
 
     try:
         logger.info("Generating themed podcast script...")
-        response = genai_client.models.generate_content(
+
+        # Use shared function with research tools
+        script = generate_script_with_research_tools(
+            genai_client=genai_client,
+            prompt=prompt,
             model="gemini-2.0-flash-exp",
-            contents=prompt
+            pdf_uri=None,  # Multi-paper episodes don't have a single PDF
+            perplexity_api_key=perplexity_api_key
         )
 
-        script = response.text.strip()
         logger.info(f"Generated script: {len(script)} characters")
 
         return script
@@ -253,7 +267,8 @@ async def generate_custom_themed_episode(
     theme: str,
     papers: List[Dict[str, Any]],
     supabase: Client,
-    genai_client: genai.Client
+    genai_client: genai.Client,
+    perplexity_api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generate a custom podcast episode from multiple papers around a theme.
@@ -263,6 +278,7 @@ async def generate_custom_themed_episode(
         papers: List of paper dicts with 'source', 'id', 'title', 'authors', etc.
         supabase: Supabase client
         genai_client: Gemini API client
+        perplexity_api_key: Optional Perplexity API key for research tools
 
     Returns:
         Dict with episode_id, audio_url, and message
@@ -327,7 +343,7 @@ async def generate_custom_themed_episode(
 
         # Generate script
         logger.info("Generating podcast script...")
-        script = await generate_themed_script(theme, papers_content, genai_client)
+        script = await generate_themed_script(theme, papers_content, genai_client, perplexity_api_key)
 
         # Save script to temp file for debugging
         script_fd, script_path = tempfile.mkstemp(suffix=".txt", prefix=f"podcast_script_{episode_id}_")
