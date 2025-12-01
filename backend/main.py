@@ -1318,6 +1318,54 @@ async def generate_show_notes_endpoint(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ProduceRequest(BaseModel):
+    mode: str  # 'auto' or 'live'
+
+
+@app.post("/podcast-creator/sessions/{session_id}/produce")
+async def produce_podcast(session_id: str, request: ProduceRequest):
+    """
+    Produce the final podcast episode.
+
+    Supports two modes:
+    - auto: Fully automated generation with AI hosts and clips
+    - live: Real-time conversation with user (WebSocket-based, not yet implemented)
+    """
+    try:
+        if request.mode == "auto":
+            from lib.podcast_production import produce_podcast_auto
+
+            result = await produce_podcast_auto(
+                session_id=session_id,
+                supabase=supabase,
+                genai_client=app.state.genai_client
+            )
+
+            return {
+                "success": True,
+                "episode": result
+            }
+
+        elif request.mode == "live":
+            # TODO: Implement live recording mode with WebSocket
+            raise HTTPException(
+                status_code=501,
+                detail="Live recording mode not yet implemented. Use 'auto' mode for now."
+            )
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid mode: {request.mode}. Must be 'auto' or 'live'."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to produce podcast: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/research/populate")
 async def populate_research_metadata(limit: Optional[int] = None, force_refresh: bool = False):
     """

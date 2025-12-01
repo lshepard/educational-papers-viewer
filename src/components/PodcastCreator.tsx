@@ -76,6 +76,11 @@ const PodcastCreator: React.FC = () => {
   const [showNotes, setShowNotes] = useState<any>(null);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
 
+  // Step 5: Production Mode
+  const [productionMode, setProductionMode] = useState<'auto' | 'live' | null>(null);
+  const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
+  const [finalEpisode, setFinalEpisode] = useState<any>(null);
+
   const handleAddResourceLink = () => {
     setResourceLinks([...resourceLinks, '']);
   };
@@ -545,6 +550,33 @@ const PodcastCreator: React.FC = () => {
     </div>
   );
 
+  const handleGeneratePodcast = async () => {
+    if (!session || !productionMode) return;
+
+    setIsGeneratingPodcast(true);
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/podcast-creator/sessions/${session.id}/produce`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: productionMode })
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        setFinalEpisode(data.episode);
+        alert('Podcast generated successfully!');
+      }
+    } catch (error) {
+      console.error('Podcast generation failed:', error);
+      alert('Podcast generation failed');
+    } finally {
+      setIsGeneratingPodcast(false);
+    }
+  };
+
   const renderStep4 = () => (
     <div className="step-content">
       <h2>Step 4: Review Show Notes</h2>
@@ -621,8 +653,115 @@ const PodcastCreator: React.FC = () => {
           ← Back to Clips
         </button>
         {showNotes && (
-          <button className="next-btn" disabled>
-            Production Mode (Coming Soon)
+          <button onClick={() => setCurrentStep(5)} className="next-btn">
+            Continue to Production →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderStep5 = () => (
+    <div className="step-content">
+      <h2>Step 5: Production Mode</h2>
+      <p className="step-description">
+        Choose how you want to create your podcast.
+      </p>
+
+      {!productionMode ? (
+        <div className="production-mode-selection">
+          <div className="mode-options">
+            <div className="mode-card">
+              <h3>🤖 Auto-Generate</h3>
+              <p>AI creates a complete podcast with two hosts discussing your research.</p>
+              <ul>
+                <li>Fully automated script and audio</li>
+                <li>Integrates your selected clips</li>
+                <li>Ready in 3-5 minutes</li>
+              </ul>
+              <button
+                onClick={() => setProductionMode('auto')}
+                className="select-mode-btn"
+              >
+                Select Auto-Generate
+              </button>
+            </div>
+
+            <div className="mode-card">
+              <h3>🎙️ Live Co-Host (Coming Soon)</h3>
+              <p>You speak directly with an AI co-host in real-time.</p>
+              <ul>
+                <li>Your voice + AI co-host</li>
+                <li>Clip triggers at key moments</li>
+                <li>More personal and dynamic</li>
+              </ul>
+              <button
+                disabled
+                className="select-mode-btn"
+                style={{ opacity: 0.5, cursor: 'not-allowed' }}
+              >
+                Coming Soon
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="production-in-progress">
+          {!finalEpisode ? (
+            <div className="generate-podcast-section">
+              <h3>Ready to Generate Your Podcast?</h3>
+              <p>
+                Mode: <strong>{productionMode === 'auto' ? 'Auto-Generate' : 'Live Co-Host'}</strong>
+              </p>
+              <p className="production-note">
+                This will create a complete podcast episode with AI hosts and your selected clips.
+                Generation takes approximately 3-5 minutes.
+              </p>
+              <div className="production-actions">
+                <button
+                  onClick={() => setProductionMode(null)}
+                  className="back-btn"
+                >
+                  ← Change Mode
+                </button>
+                <button
+                  onClick={handleGeneratePodcast}
+                  disabled={isGeneratingPodcast}
+                  className="generate-btn"
+                >
+                  {isGeneratingPodcast ? 'Generating Podcast...' : 'Generate Podcast'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="podcast-complete">
+              <h3>✅ Podcast Complete!</h3>
+              <div className="episode-player">
+                <audio controls src={finalEpisode.audio_url} style={{ width: '100%' }}>
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+              <div className="episode-details">
+                <p><strong>Title:</strong> {finalEpisode.title}</p>
+                <p><strong>Duration:</strong> {Math.floor(finalEpisode.duration_seconds / 60)} minutes</p>
+              </div>
+              <div className="production-actions">
+                <button
+                  onClick={() => navigate('/admin/podcast-manager')}
+                  className="next-btn"
+                >
+                  View in Podcast Manager
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="step-actions">
+        {!finalEpisode && (
+          <button onClick={() => setCurrentStep(4)} className="back-btn">
+            ← Back to Show Notes
           </button>
         )}
       </div>
@@ -652,6 +791,9 @@ const PodcastCreator: React.FC = () => {
         <div className={`step-badge ${currentStep >= 4 ? 'active' : ''}`}>
           4. Show Notes
         </div>
+        <div className={`step-badge ${currentStep >= 5 ? 'active' : ''}`}>
+          5. Production
+        </div>
       </div>
 
       <div className="creator-main">
@@ -659,6 +801,7 @@ const PodcastCreator: React.FC = () => {
         {currentStep === 2 && renderStep2()}
         {currentStep === 3 && renderStep3()}
         {currentStep === 4 && renderStep4()}
+        {currentStep === 5 && renderStep5()}
       </div>
     </div>
   );

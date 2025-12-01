@@ -18,6 +18,7 @@ Requires-Dist: httpx>=0.28.0
 Requires-Dist: pydantic>=2.10.0
 Requires-Dist: pytest>=8.4.2
 Requires-Dist: pydub>=0.25.1
+Requires-Dist: yt-dlp>=2024.11.18
 Provides-Extra: dev
 Requires-Dist: pytest>=7.4.3; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.21.1; extra == "dev"

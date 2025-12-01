@@ -708,3 +708,139 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Production Mode */
+.production-mode-selection {
+  padding: 2rem 0;
+}
+
+.mode-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.mode-card {
+  background: #f7fafc;
+  padding: 2rem;
+  border-radius: 12px;
+  border: 2px solid #e2e8f0;
+  transition: all 0.3s;
+}
+
+.mode-card:hover {
+  border-color: #4299e1;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+}
+
+.mode-card h3 {
+  margin: 0 0 1rem 0;
+  color: #1a202c;
+}
+
+.mode-card p {
+  color: #4a5568;
+  margin-bottom: 1rem;
+}
+
+.mode-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0;
+}
+
+.mode-card li {
+  padding: 0.5rem 0;
+  color: #2d3748;
+}
+
+.mode-card li:before {
+  content: "✓ ";
+  color: #48bb78;
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
+.select-mode-btn {
+  background: #4299e1;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  width: 100%;
+  transition: background 0.2s;
+}
+
+.select-mode-btn:hover:not(:disabled) {
+  background: #3182ce;
+}
+
+.select-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.production-in-progress {
+  padding: 2rem 0;
+}
+
+.generate-podcast-section {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: #f7fafc;
+  border-radius: 12px;
+}
+
+.generate-podcast-section h3 {
+  color: #1a202c;
+  margin-top: 0;
+}
+
+.production-note {
+  color: #718096;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+
+.production-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.podcast-complete {
+  background: #f0fff4;
+  border: 2px solid #9ae6b4;
+  padding: 2rem;
+  border-radius: 12px;
+}
+
+.podcast-complete h3 {
+  color: #22543d;
+  margin-top: 0;
+  text-align: center;
+}
+
+.episode-player {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 8px;
+}
+
+.episode-details {
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.episode-details p {
+  margin: 0.5rem 0;
+  color: #2d3748;
+}
