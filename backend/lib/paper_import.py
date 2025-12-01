@@ -177,13 +177,87 @@ async def extract_pdf_metadata(pdf_path: str) -> Dict[str, Any]:
         return {}
 
 
-async def download_pdf(url: str, output_path: Path) -> bool:
+async def find_pdf_with_scrapegraph(page_url: str, api_key: str) -> Optional[str]:
     """
-    Download PDF from URL.
+    Use ScrapeGraphAI to find PDF links on a webpage.
 
     Args:
-        url: PDF URL
+        page_url: URL of the page to search
+        api_key: ScrapeGraphAI API key
+
+    Returns:
+        PDF URL if found, None otherwise
+    """
+    try:
+        logger.info(f"Using ScrapeGraphAI to find PDF on: {page_url}")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.scrapegraphai.com/v1/smartscraper",
+                headers={
+                    "SGAI-APIKEY": api_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "website_url": page_url,
+                    "user_prompt": "Find any PDF download link, full text link, or direct PDF URL on this page. Return only the raw PDF URL.",
+                    "render_heavy_js": True
+                },
+                timeout=60.0
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("status") == "completed" and data.get("result"):
+                result = data["result"]
+
+                # Try to extract PDF URL from result
+                # The result structure may vary, so check common patterns
+                pdf_url = None
+
+                if isinstance(result, dict):
+                    # Check for common keys
+                    for key in ["pdf_url", "download_url", "link", "url", "pdf_link"]:
+                        if key in result and result[key]:
+                            pdf_url = result[key]
+                            break
+
+                    # If not found, check nested values
+                    if not pdf_url:
+                        for value in result.values():
+                            if isinstance(value, str) and ".pdf" in value.lower():
+                                pdf_url = value
+                                break
+
+                elif isinstance(result, str):
+                    # Result is a string, check if it's a URL
+                    if ".pdf" in result.lower() or result.startswith("http"):
+                        pdf_url = result
+
+                if pdf_url:
+                    logger.info(f"ScrapeGraphAI found PDF URL: {pdf_url}")
+                    return pdf_url
+                else:
+                    logger.warning("ScrapeGraphAI did not find a PDF URL")
+                    return None
+
+            logger.warning(f"ScrapeGraphAI request failed or incomplete: {data.get('status')}")
+            return None
+
+    except Exception as e:
+        logger.error(f"ScrapeGraphAI PDF search failed: {e}", exc_info=True)
+        return None
+
+
+async def download_pdf(url: str, output_path: Path, scrapegraph_api_key: Optional[str] = None) -> bool:
+    """
+    Download PDF from URL with ScrapeGraphAI fallback.
+
+    Args:
+        url: PDF URL or page URL
         output_path: Where to save the PDF
+        scrapegraph_api_key: Optional ScrapeGraphAI API key for fallback
 
     Returns:
         True if successful
@@ -199,6 +273,16 @@ async def download_pdf(url: str, output_path: Path) -> bool:
                 # Check magic bytes
                 if not response.content.startswith(b'%PDF'):
                     logger.warning(f"URL does not appear to be a PDF: {content_type}")
+
+                    # Try ScrapeGraphAI fallback if API key provided
+                    if scrapegraph_api_key:
+                        logger.info("Attempting ScrapeGraphAI fallback to find PDF...")
+                        pdf_url = await find_pdf_with_scrapegraph(url, scrapegraph_api_key)
+
+                        if pdf_url:
+                            # Try downloading the found PDF URL
+                            return await download_pdf(pdf_url, output_path, None)  # Don't recurse fallback
+
                     return False
 
             with open(output_path, 'wb') as f:
@@ -209,13 +293,24 @@ async def download_pdf(url: str, output_path: Path) -> bool:
 
     except Exception as e:
         logger.error(f"Failed to download PDF: {e}")
+
+        # Try ScrapeGraphAI fallback if API key provided and not already tried
+        if scrapegraph_api_key and not url.endswith('.pdf'):
+            logger.info("Attempting ScrapeGraphAI fallback after download failure...")
+            pdf_url = await find_pdf_with_scrapegraph(url, scrapegraph_api_key)
+
+            if pdf_url:
+                # Try downloading the found PDF URL
+                return await download_pdf(pdf_url, output_path, None)  # Don't recurse fallback
+
         return False
 
 
 async def import_paper_from_url(
     url: str,
     supabase: Client,
-    auto_extract: bool = False
+    auto_extract: bool = False,
+    scrapegraph_api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Import a paper from URL (arXiv or direct PDF).
@@ -259,9 +354,9 @@ async def import_paper_from_url(
                 # Fallback if API fails
                 pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
 
-        # Download PDF
+        # Download PDF (with ScrapeGraphAI fallback if API key provided)
         pdf_path = temp_path / "paper.pdf"
-        success = await download_pdf(pdf_url, pdf_path)
+        success = await download_pdf(pdf_url, pdf_path, scrapegraph_api_key)
 
         if not success:
             raise ValueError("Failed to download PDF")
