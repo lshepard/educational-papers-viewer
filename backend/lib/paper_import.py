@@ -306,6 +306,7 @@ async def import_paper_from_url(
             "year": metadata.get("year"),
             "venue": metadata.get("venue"),
             "paper_url": metadata.get("paper_url") or url,
+            "source_url": url,  # Original URL provided by user
             "storage_bucket": "papers",
             "storage_path": storage_path,
             "processing_status": "pending"
