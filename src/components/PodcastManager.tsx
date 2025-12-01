@@ -161,9 +161,27 @@ const PodcastManager: React.FC = () => {
     <div className="podcast-manager">
       <div className="podcast-manager-header">
         <h1>Podcast Manager</h1>
-        <button onClick={() => navigate('/admin')} className="back-btn">
-          ← Back to Dashboard
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => navigate('/admin/podcast-creator')}
+            className="create-podcast-btn"
+            style={{
+              background: '#4299e1',
+              color: 'white',
+              padding: '10px 20px',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px'
+            }}
+          >
+            ✨ Create Custom Podcast
+          </button>
+          <button onClick={() => navigate('/admin')} className="back-btn">
+            ← Back to Dashboard
+          </button>
+        </div>
       </div>
 
       <div className="podcast-feed-link">
