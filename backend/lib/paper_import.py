@@ -309,12 +309,7 @@ async def import_paper_from_url(
             "storage_bucket": "papers",
             "storage_path": storage_path,
             "pdf_url": pdf_url,
-            "processing_status": "pending",
-            "metadata": {
-                "imported_from": url,
-                "arxiv_id": arxiv_id,
-                "abstract": metadata.get("abstract")
-            }
+            "processing_status": "pending"
         }
 
         response = supabase.table("papers").insert(paper_data).execute()
