@@ -23,6 +23,49 @@ from lib.research import create_research_agent
 logger = logging.getLogger(__name__)
 
 
+def search_related_work_perplexity(query: str, perplexity_api_key: str) -> str:
+    """
+    Search for related work and context using Perplexity AI.
+
+    This function can be called by the podcast generation agent to gather
+    additional context about the research topic, find similar studies,
+    or get background information.
+
+    Args:
+        query: The search query about the research topic
+        perplexity_api_key: Perplexity API key
+
+    Returns:
+        Search results and context from Perplexity
+    """
+    try:
+        from perplexipy import PerplexityClient
+
+        client = PerplexityClient(api_key=perplexity_api_key)
+
+        # Use Perplexity to search for related work
+        response = client.chat_completion(
+            model="sonar",
+            messages=[{
+                "role": "user",
+                "content": query
+            }]
+        )
+
+        # Extract the response content
+        if response and response.choices and len(response.choices) > 0:
+            result = response.choices[0].message.content
+            logger.info(f"Perplexity search successful for query: {query[:100]}...")
+            return result
+        else:
+            logger.warning("Perplexity returned empty response")
+            return "No results found"
+
+    except Exception as e:
+        logger.error(f"Perplexity search failed: {e}")
+        return f"Search failed: {str(e)}"
+
+
 def generate_audio_from_script(
     script_text: str,
     genai_client: genai.Client,
@@ -183,7 +226,8 @@ async def generate_podcast_from_paper(
     paper_id: str,
     supabase: Client,
     genai_client: genai.Client,
-    episode_id: str = None
+    episode_id: str = None,
+    perplexity_api_key: Optional[str] = None
 ) -> dict:
     """
     Generate a podcast from a research paper.
@@ -330,6 +374,14 @@ Create an engaging, conversational podcast discussion between two hosts about th
 - Pull quotes DIRECTLY from the paper text - don't paraphrase when quoting
 - If there's a specific experiment/system, dedicate real time to explaining how it worked
 
+**AVAILABLE TOOLS:**
+You have access to a `search_related_work` function that can search for:
+- Similar studies or related work in this field
+- Background information on methods or concepts
+- Examples of how this research builds on or differs from prior work
+- Real-world applications or implementations
+Use this tool as needed to enrich the discussion with broader context.
+
 Format the script like this:
 Alex: [speaks naturally]
 Sam: [responds naturally]
@@ -338,16 +390,52 @@ Alex: [continues conversation]
 
 Focus on making the content digestible, honest, and interesting for casual listeners."""
 
-        # Generate script with Gemini
+        # Define the Perplexity search tool for Gemini function calling
+        search_related_work_tool = types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name="search_related_work",
+                    description="Search for related research, similar studies, background information, or broader context about the research topic. Use this to find examples, comparisons, or real-world applications.",
+                    parameters=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "query": types.Schema(
+                                type=types.Type.STRING,
+                                description="The search query about the research topic, methods, or concepts"
+                            )
+                        },
+                        required=["query"]
+                    )
+                )
+            ]
+        )
+
+        # Generate script with Gemini with function calling enabled
+        if perplexity_api_key:
+            logger.info("Generating script with Perplexity research tool enabled")
+            config = types.GenerateContentConfig(
+                tools=[search_related_work_tool],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=False,
+                    function_calling_callback=lambda fn_call: search_related_work_perplexity(
+                        query=fn_call.args["query"],
+                        perplexity_api_key=perplexity_api_key
+                    )
+                )
+            )
+        else:
+            logger.info("Generating script without Perplexity (API key not provided)")
+            config = types.GenerateContentConfig(
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+            )
+
         script_response = genai_client.models.generate_content(
             model="gemini-3-pro-preview",
             contents=[
                 types.Part.from_uri(file_uri=gemini_file_uri, mime_type="application/pdf"),
                 script_prompt
             ],
-            config=types.GenerateContentConfig(
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
-            )
+            config=config
         )
 
         script_text = script_response.text

@@ -10,6 +10,7 @@ Requires-Dist: python-multipart>=0.0.18
 Requires-Dist: supabase>=2.11.0
 Requires-Dist: google-genai>=0.4.0
 Requires-Dist: semanticscholar>=0.9.0
+Requires-Dist: perplexipy>=1.1.1
 Requires-Dist: pymupdf>=1.24.0
 Requires-Dist: pillow>=10.0.0
 Requires-Dist: python-dotenv>=1.0.0

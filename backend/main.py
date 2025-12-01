@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # CORS configuration
@@ -73,6 +74,12 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Papers Viewer Backend...")
     logger.info("Gemini API configured")
     logger.info("Supabase client initialized")
+
+    # Check Perplexity API configuration
+    if PERPLEXITY_API_KEY:
+        logger.info("✅ Perplexity API configured - research tool enabled for podcast generation")
+    else:
+        logger.warning("⚠️  Perplexity API not configured - podcast generation will work but without external research tool")
 
     # Check Gemini native audio capabilities
     try:
@@ -504,7 +511,13 @@ async def _generate_podcast_from_paper(paper_id: str, episode_id: str = None) ->
         dict with success, episode_id, audio_url, and message
     """
     genai_client = app.state.genai_client
-    return await generate_podcast_from_paper(paper_id, supabase, genai_client, episode_id)
+    return await generate_podcast_from_paper(
+        paper_id,
+        supabase,
+        genai_client,
+        episode_id,
+        perplexity_api_key=PERPLEXITY_API_KEY
+    )
 
 
 @app.post("/podcast/generate", response_model=PodcastGenerationResponse)
