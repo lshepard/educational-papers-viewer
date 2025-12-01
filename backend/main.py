@@ -375,8 +375,10 @@ async def extract_paper_content(request: ExtractionRequest):
 
         # Upload to Gemini
         logger.info("Uploading PDF to Gemini...")
-        gemini_file = genai.upload_file(temp_file_path)
-        logger.info(f"File uploaded to Gemini: {gemini_file.name}")
+        genai_client = app.state.genai_client
+        upload_response = genai_client.files.upload(file=temp_file_path)
+        gemini_file = upload_response  # Keep the variable name for compatibility
+        logger.info(f"File uploaded to Gemini: {upload_response.uri} (name: {upload_response.name})")
 
         # ========== PARALLEL EXTRACTION ==========
         logger.info("Starting parallel extraction: text sections and images...")
@@ -492,7 +494,8 @@ async def extract_paper_content(request: ExtractionRequest):
 
         if gemini_file:
             try:
-                gemini_file.delete()
+                genai_client = app.state.genai_client
+                genai_client.files.delete(name=gemini_file.name)
                 logger.debug(f"Deleted Gemini file: {gemini_file.name}")
             except Exception as e:
                 logger.warning(f"Could not delete Gemini file: {e}")
@@ -1406,6 +1409,116 @@ async def import_paper(request: ImportPaperRequest):
 
     except Exception as e:
         logger.error(f"Failed to import paper: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/papers/batch-extract")
+async def batch_extract_papers_endpoint(limit: Optional[int] = None, status: str = "pending"):
+    """
+    Batch extract content from multiple papers.
+
+    This runs in the foreground and may take several minutes.
+    Processes papers sequentially to avoid API rate limits.
+
+    Query parameters:
+    - limit: Maximum number of papers to process (default: all)
+    - status: Filter by processing status (default: "pending")
+    """
+    try:
+        from lib.batch_processing import batch_extract_papers
+
+        genai_client = app.state.genai_client
+        result = await batch_extract_papers(
+            supabase=supabase,
+            genai_client=genai_client,
+            limit=limit,
+            status_filter=status
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Batch extraction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/papers/processing-stats")
+async def get_processing_stats_endpoint():
+    """
+    Get statistics about paper processing status.
+
+    Returns counts of papers by status (pending, processing, completed, failed).
+    """
+    try:
+        from lib.batch_processing import get_processing_stats
+
+        stats = await get_processing_stats(supabase)
+        return stats
+
+    except Exception as e:
+        logger.error(f"Failed to get stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SearchTestRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+@app.post("/search/test")
+async def test_search(request: SearchTestRequest):
+    """
+    Test full-text search and return detailed results.
+
+    This endpoint helps verify that:
+    1. Papers have been processed and have sections
+    2. Full-text search index (fts) is working
+    3. Search results are relevant
+
+    Returns search results with paper titles and section info.
+    """
+    try:
+        logger.info(f"Testing search for: {request.query}")
+
+        # Perform search
+        response = supabase.table("paper_sections") \
+            .select("id, paper_id, section_type, section_title, content") \
+            .limit(request.limit) \
+            .text_search("fts", request.query) \
+            .execute()
+
+        results = response.data
+
+        # Enrich with paper information
+        enriched_results = []
+        for section in results:
+            # Get paper title
+            paper_response = supabase.table("papers").select("title, authors").eq(
+                "id", section["paper_id"]
+            ).single().execute()
+
+            paper = paper_response.data if paper_response.data else {}
+
+            enriched_results.append({
+                "section_id": section["id"],
+                "paper_id": section["paper_id"],
+                "paper_title": paper.get("title", "Unknown"),
+                "paper_authors": paper.get("authors"),
+                "section_type": section["section_type"],
+                "section_title": section.get("section_title"),
+                "content_preview": section["content"][:200] + "..." if len(section["content"]) > 200 else section["content"]
+            })
+
+        return {
+            "success": True,
+            "query": request.query,
+            "results_count": len(enriched_results),
+            "results": enriched_results,
+            "message": f"Found {len(enriched_results)} matching sections" if enriched_results else "No results found. Have papers been processed?"
+        }
+
+    except Exception as e:
+        logger.error(f"Search test failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

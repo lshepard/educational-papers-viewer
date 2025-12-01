@@ -1353,6 +1353,60 @@ body {
   background-color: #2980b9;
 }
 
+.batch-controls {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.select-btn,
+.clear-btn,
+.batch-process-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.select-btn {
+  background-color: #17a2b8;
+}
+
+.select-btn:hover:not(:disabled) {
+  background-color: #138496;
+}
+
+.clear-btn {
+  background-color: #6c757d;
+}
+
+.clear-btn:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+.batch-process-btn {
+  background-color: #28a745;
+}
+
+.batch-process-btn:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.select-btn:disabled,
+.clear-btn:disabled,
+.batch-process-btn:disabled {
+  background-color: #bdc3c7;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .message {
   padding: 1rem;
   border-radius: 8px;

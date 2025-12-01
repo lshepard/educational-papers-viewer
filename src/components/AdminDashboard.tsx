@@ -63,7 +63,7 @@ const AdminDashboard: React.FC = () => {
 
         <div className="admin-card">
           <h2>⚙️ Paper Processing</h2>
-          <p>Extract content from uploaded papers</p>
+          <p>Extract content from uploaded papers (batch or individual)</p>
           <Link to="/admin/processing" className="admin-card-button">
             Go to Processing
           </Link>
