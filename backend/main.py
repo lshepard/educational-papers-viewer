@@ -1366,6 +1366,47 @@ async def produce_podcast(session_id: str, request: ProduceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ImportPaperRequest(BaseModel):
+    url: str
+    auto_extract: bool = False
+
+
+@app.post("/papers/import")
+async def import_paper(request: ImportPaperRequest):
+    """
+    Import a paper from URL (arXiv or direct PDF).
+
+    Supports:
+    - arXiv URLs: https://arxiv.org/abs/2510.12915
+    - arXiv PDF URLs: https://arxiv.org/pdf/2510.12915.pdf
+    - Direct PDF URLs
+
+    Process:
+    1. Downloads PDF
+    2. Extracts metadata (from arXiv API if applicable)
+    3. Uploads to Supabase storage
+    4. Creates database record
+    5. Optionally triggers content extraction
+    """
+    try:
+        from lib.paper_import import import_paper_from_url
+
+        result = await import_paper_from_url(
+            url=request.url,
+            supabase=supabase,
+            auto_extract=request.auto_extract
+        )
+
+        return {
+            "success": True,
+            **result
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to import paper: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/research/populate")
 async def populate_research_metadata(limit: Optional[int] = None, force_refresh: bool = False):
     """

@@ -54,7 +54,15 @@ const AdminDashboard: React.FC = () => {
 
       <div className="admin-dashboard-content">
         <div className="admin-card">
-          <h2>Paper Processing</h2>
+          <h2>📄 Import Paper</h2>
+          <p>Add papers from arXiv or direct PDF links</p>
+          <Link to="/admin/import" className="admin-card-button">
+            Import Paper
+          </Link>
+        </div>
+
+        <div className="admin-card">
+          <h2>⚙️ Paper Processing</h2>
           <p>Extract content from uploaded papers</p>
           <Link to="/admin/processing" className="admin-card-button">
             Go to Processing
@@ -62,7 +70,7 @@ const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="admin-card">
-          <h2>Podcast Manager</h2>
+          <h2>🎙️ Podcast Manager</h2>
           <p>View, edit, and regenerate podcast episodes</p>
           <Link to="/admin/podcast-manager" className="admin-card-button">
             Manage Podcasts
