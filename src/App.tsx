@@ -7,6 +7,7 @@ import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import PaperProcessing from './components/PaperProcessing';
 import PodcastManager from './components/PodcastManager';
+import PodcastCreator from './components/PodcastCreator';
 import { GenaiPaper } from './supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -66,6 +67,7 @@ function App() {
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/processing" element={<PaperProcessing />} />
           <Route path="/admin/podcast-manager" element={<PodcastManager />} />
+          <Route path="/admin/podcast-creator" element={<PodcastCreator />} />
         </Routes>
       </Router>
     </AuthProvider>
