@@ -145,8 +145,8 @@ const PaperImport: React.FC = () => {
               {result.authors && <p><strong>Authors:</strong> {result.authors}</p>}
               <p><strong>Paper ID:</strong> {result.paper_id}</p>
               <p>
-                <a href={result.pdf_url} target="_blank" rel="noopener noreferrer">
-                  View PDF
+                <a href={result.paper_url} target="_blank" rel="noopener noreferrer">
+                  View Paper
                 </a>
               </p>
             </div>

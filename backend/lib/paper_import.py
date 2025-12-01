@@ -308,7 +308,6 @@ async def import_paper_from_url(
             "paper_url": metadata.get("paper_url") or url,
             "storage_bucket": "papers",
             "storage_path": storage_path,
-            "pdf_url": pdf_url,
             "processing_status": "pending"
         }
 
@@ -344,7 +343,7 @@ async def import_paper_from_url(
             "title": paper["title"],
             "authors": paper["authors"],
             "storage_path": storage_path,
-            "pdf_url": pdf_url
+            "paper_url": paper["paper_url"]
         }
 
     except Exception as e:
