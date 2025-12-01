@@ -28,6 +28,8 @@ dependencies = [
     "pytest>=8.4.2",
     # Audio processing
     "pydub>=0.25.1",
+    # Video/Audio downloading
+    "yt-dlp>=2024.11.18",
 ]
 
 [project.optional-dependencies]
