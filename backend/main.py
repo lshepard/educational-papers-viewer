@@ -19,7 +19,7 @@ from supabase import create_client, Client
 from lib.core import GeminiFileManager, PaperExtractionService
 
 # Import routers
-from routers import papers_router, podcasts_router, search_router, admin_router
+from routers import papers_router, podcasts_router, search_router, semantic_scholar_router, admin_router
 
 # Load environment variables
 load_dotenv()
@@ -127,6 +127,7 @@ else:
 app.include_router(papers_router)
 app.include_router(podcasts_router)
 app.include_router(search_router)
+app.include_router(semantic_scholar_router)
 app.include_router(admin_router)
 
 

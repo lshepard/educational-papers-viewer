@@ -24,13 +24,34 @@ router = APIRouter(prefix="/podcast", tags=["podcasts"])
 # ==================== Request/Response Models ====================
 
 class PodcastGenerationRequest(BaseModel):
-    """Unified request for podcast generation."""
-    paper_ids: List[str]  # 1 or many papers
+    """
+    Unified request for podcast generation.
+
+    Accepts both old format (paper_id: string) and new format (paper_ids: string[])
+    for backward compatibility.
+    """
+    paper_id: Optional[str] = None  # Legacy: single paper
+    paper_ids: Optional[List[str]] = None  # New: 1 or many papers
     title: Optional[str] = None
     description: Optional[str] = None
     theme: Optional[str] = None
     episode_number: Optional[int] = None
     season_number: Optional[int] = None
+
+    def get_paper_ids(self) -> List[str]:
+        """Get paper IDs as a list, regardless of input format."""
+        if self.paper_ids:
+            return self.paper_ids
+        elif self.paper_id:
+            return [self.paper_id]
+        else:
+            raise ValueError("Either paper_id or paper_ids must be provided")
+
+
+class CustomEpisodeRequest(BaseModel):
+    """Request for generating custom multi-paper episode with theme."""
+    theme: str
+    papers: List[dict]  # Papers with metadata (for /podcast/generate-custom backward compat)
 
 
 class PodcastGenerationResponse(BaseModel):
@@ -101,13 +122,16 @@ async def generate_podcast(
     episode_id = None
 
     try:
-        if not request.paper_ids:
-            raise HTTPException(status_code=400, detail="At least one paper_id required")
+        # Get paper IDs (handles both old and new format)
+        try:
+            paper_ids = request.get_paper_ids()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-        logger.info(f"Generating podcast for {len(request.paper_ids)} paper(s)")
+        logger.info(f"Generating podcast for {len(paper_ids)} paper(s)")
 
         # Fetch papers
-        papers_response = supabase.table("papers").select("*").in_("id", request.paper_ids).execute()
+        papers_response = supabase.table("papers").select("*").in_("id", paper_ids).execute()
 
         if not papers_response.data:
             raise HTTPException(status_code=404, detail="Papers not found")
@@ -230,6 +254,50 @@ async def generate_podcast(
                 "generation_error": str(e)
             }).eq("id", episode_id).execute()
 
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generate-custom", response_model=PodcastGenerationResponse)
+async def generate_custom_episode(
+    request: CustomEpisodeRequest,
+    supabase = Depends(get_supabase),
+    genai_client = Depends(get_genai_client),
+    gemini_manager = Depends(get_gemini_manager),
+    perplexity_api_key = Depends(get_perplexity_api_key)
+):
+    """
+    Generate custom podcast episode from multiple papers with a theme.
+
+    **Backward compatibility endpoint** - prefer using POST /generate with paper_ids and theme.
+
+    This endpoint wraps the unified /generate endpoint with legacy format support.
+    """
+    try:
+        # Extract paper IDs from papers array
+        paper_ids = [p.get("id") or p.get("paperId") for p in request.papers if p.get("id") or p.get("paperId")]
+
+        if not paper_ids:
+            raise HTTPException(status_code=400, detail="No valid paper IDs found in papers array")
+
+        # Convert to unified request format
+        unified_request = PodcastGenerationRequest(
+            paper_ids=paper_ids,
+            theme=request.theme
+        )
+
+        # Call unified generation endpoint
+        return await generate_podcast(
+            request=unified_request,
+            supabase=supabase,
+            genai_client=genai_client,
+            gemini_manager=gemini_manager,
+            perplexity_api_key=perplexity_api_key
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Custom episode generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

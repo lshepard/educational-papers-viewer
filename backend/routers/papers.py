@@ -175,7 +175,37 @@ async def batch_extract_papers(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/processing-stats", response_model=ProcessingStats)
+@router.get("/search")
+async def search_papers(q: str, supabase = Depends(get_supabase)):
+    """
+    Search papers in the database by keywords.
+
+    Searches across title, authors, application, venue, and why fields.
+    Returns matching papers with all their metadata.
+    """
+    try:
+        search_term = f"%{q}%"
+
+        response = supabase.table("papers").select("*").or_(
+            f"title.ilike.{search_term},"
+            f"authors.ilike.{search_term},"
+            f"application.ilike.{search_term},"
+            f"venue.ilike.{search_term},"
+            f"why.ilike.{search_term}"
+        ).limit(50).execute()
+
+        return {
+            "success": True,
+            "papers": response.data,
+            "count": len(response.data)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to search papers: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stats", response_model=ProcessingStats)
 async def get_processing_stats(supabase = Depends(get_supabase)):
     """Get statistics about paper processing status."""
     try:

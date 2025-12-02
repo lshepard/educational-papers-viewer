@@ -11,7 +11,11 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Main search router for internal full-text search
 router = APIRouter(prefix="/search", tags=["search"])
+
+# Semantic Scholar router (no prefix to match /semantic-scholar/*)
+ss_router = APIRouter(prefix="/semantic-scholar", tags=["semantic-scholar"])
 
 
 # ==================== Request/Response Models ====================
@@ -148,9 +152,16 @@ async def test_search(request: SearchTestRequest, supabase = Depends(get_supabas
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/semantic-scholar")
+# ==================== Semantic Scholar Endpoints ====================
+
+@ss_router.get("/search")
 async def search_semantic_scholar(q: str = Query(...), limit: int = 10):
-    """Search papers using Semantic Scholar API."""
+    """
+    Search Semantic Scholar for papers.
+
+    Proxy to Semantic Scholar API with retry logic for rate limiting.
+    Returns papers with metadata including title, authors, citations, etc.
+    """
     try:
         max_retries = 3
 
@@ -162,14 +173,16 @@ async def search_semantic_scholar(q: str = Query(...), limit: int = 10):
                         params={
                             "query": q,
                             "limit": limit,
-                            "fields": "title,authors,year,abstract,venue,citationCount,externalIds"
+                            "fields": "paperId,title,authors,year,abstract,venue,citationCount,externalIds,url"
                         },
                         timeout=30.0
                     )
 
                     if response.status_code == 429:  # Rate limited
                         if attempt < max_retries - 1:
-                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                            delay = 2 ** attempt
+                            logger.warning(f"Semantic Scholar rate limit, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(delay)
                             continue
                         else:
                             raise HTTPException(status_code=429, detail="Semantic Scholar API rate limit exceeded")
@@ -179,7 +192,7 @@ async def search_semantic_scholar(q: str = Query(...), limit: int = 10):
 
                     return {
                         "success": True,
-                        "results": data.get("data", []),
+                        "papers": data.get("data", []),  # Match old API
                         "total": data.get("total", 0)
                     }
 
@@ -194,9 +207,14 @@ async def search_semantic_scholar(q: str = Query(...), limit: int = 10):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/citations")
+@ss_router.post("/citations")
 async def fetch_citations(request: CitationsRequest):
-    """Fetch citation data for multiple papers from Semantic Scholar."""
+    """
+    Fetch citation data for multiple papers from Semantic Scholar.
+
+    Accepts a list of paper IDs and returns citation metadata for each.
+    Tries multiple ID formats (with/without ARXIV: prefix).
+    """
     try:
         results = []
         seen_paper_ids = set()
@@ -219,7 +237,7 @@ async def fetch_citations(request: CitationsRequest):
                             search_id = f"{id_prefix}{paper_id}"
                             response = await client.get(
                                 f"https://api.semanticscholar.org/graph/v1/paper/{search_id}",
-                                params={"fields": "title,authors,year,citationCount,venue"},
+                                params={"fields": "paperId,title,authors,year,citationCount,venue"},
                                 timeout=10.0
                             )
 
