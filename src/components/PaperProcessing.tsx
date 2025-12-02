@@ -100,7 +100,7 @@ const PaperProcessing: React.FC = () => {
       return
     }
 
-    if (!confirm(`Process ${selectedPapers.size} selected paper(s)? This may take several minutes.`)) {
+    if (!window.confirm(`Process ${selectedPapers.size} selected paper(s)? This may take several minutes.`)) {
       return
     }
 
