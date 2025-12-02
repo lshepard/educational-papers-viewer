@@ -744,3 +744,199 @@ Make it engaging and podcast-friendly, not academic!"""
                 logger.info(f"Deleted Gemini file: {gemini_file_name}")
             except Exception as e:
                 logger.warning(f"Could not delete Gemini file: {e}")
+
+
+async def generate_podcast_from_papers(
+    paper_ids: List[str],
+    supabase: Client,
+    genai_client: genai.Client,
+    perplexity_api_key: Optional[str] = None,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    theme: Optional[str] = None,
+    episode_number: Optional[int] = None,
+    season_number: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Unified podcast generation function for single or multiple papers.
+
+    This consolidates the single-paper and multi-paper podcast generation flows
+    into one function that handles both cases seamlessly.
+
+    Args:
+        paper_ids: List of paper IDs (can be 1 or more)
+        supabase: Supabase client
+        genai_client: Gemini client
+        perplexity_api_key: Optional Perplexity API key for research
+        title: Optional custom episode title
+        description: Optional custom episode description
+        theme: Optional theme/angle for multi-paper episodes
+        episode_number: Optional episode number
+        season_number: Optional season number
+
+    Returns:
+        Dictionary with success, episode_id, audio_url, and message
+    """
+    logger.info(f"Generating podcast for {len(paper_ids)} paper(s)")
+
+    # If single paper, use the existing optimized function
+    if len(paper_ids) == 1:
+        return await generate_podcast_from_paper(
+            paper_id=paper_ids[0],
+            supabase=supabase,
+            genai_client=genai_client,
+            episode_id=None,
+            perplexity_api_key=perplexity_api_key
+        )
+
+    # Multi-paper episode generation
+    episode_id = None
+
+    try:
+        # Fetch all papers
+        papers_response = supabase.table("papers").select("*").in_("id", paper_ids).execute()
+
+        if not papers_response.data or len(papers_response.data) == 0:
+            raise ValueError("No papers found with provided IDs")
+
+        papers = papers_response.data
+        logger.info(f"Found {len(papers)} papers for podcast")
+
+        # Create episode record
+        episode_data = {
+            "generation_status": "processing",
+            "is_multi_paper": True,
+            "episode_number": episode_number,
+            "season_number": season_number
+        }
+
+        if title:
+            episode_data["title"] = title
+        if description:
+            episode_data["description"] = description
+
+        episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
+        episode_id = episode_response.data[0]["id"]
+
+        # Create junction table entries
+        for paper in papers:
+            supabase.table("episode_papers").insert({
+                "episode_id": episode_id,
+                "paper_id": paper["id"]
+            }).execute()
+
+        # Build prompt for multi-paper script
+        papers_context = "\n\n".join([
+            f"Paper {idx + 1}:\nTitle: {p.get('title', 'Untitled')}\nAuthors: {p.get('authors', 'Unknown')}\nYear: {p.get('year', 'Unknown')}\nAbstract: {p.get('abstract', 'No abstract available')}"
+            for idx, p in enumerate(papers)
+        ])
+
+        theme_instruction = f"\n\nTheme/Angle: {theme}" if theme else ""
+
+        script_prompt = f"""You are creating a podcast episode discussing multiple research papers.
+
+{papers_context}{theme_instruction}
+
+Create an engaging 5-7 minute podcast script with:
+1. Catchy introduction that frames the connection between the papers
+2. Discussion of each paper's key contributions
+3. Synthesis showing how the papers relate or build on each other
+4. Practical implications and future directions
+5. Call to action for listeners
+
+Format the script for natural speech with [HOST] markers."""
+
+        # Generate script
+        logger.info("Generating multi-paper podcast script...")
+        script_text = generate_script_with_research_tools(
+            genai_client=genai_client,
+            prompt=script_prompt,
+            perplexity_api_key=perplexity_api_key
+        )
+
+        # Generate audio
+        logger.info("Generating audio with Gemini TTS...")
+        audio_data = generate_audio_from_script(script_text, genai_client)
+
+        # Convert to MP3
+        logger.info("Converting audio to MP3...")
+        mp3_data = convert_audio_to_mp3(audio_data)
+
+        # Upload to storage
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"multi_paper_episode_{timestamp}.mp3"
+
+        from lib.storage import upload_audio_to_storage as upload_audio, get_public_url
+
+        storage_path = upload_audio(
+            audio_data=mp3_data,
+            filename=filename,
+            bucket="episodes"
+        )
+
+        public_url = get_public_url("episodes", storage_path)
+
+        # Generate metadata if not provided
+        if not title or not description:
+            try:
+                metadata_prompt = f"""Generate engaging podcast metadata for a multi-paper episode.
+
+Papers covered:
+{papers_context}
+
+Generate JSON with:
+1. "title": A compelling title (40-80 chars) that captures the theme
+2. "description": An engaging description with paper details and links"""
+
+                metadata_response = genai_client.models.generate_content(
+                    model='gemini-exp-1206',
+                    contents=metadata_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+
+                metadata = json.loads(metadata_response.text)
+                if not title:
+                    title = metadata.get("title", "Multi-Paper Discussion")
+                if not description:
+                    description = metadata.get("description", "A discussion of multiple research papers")
+
+            except Exception as e:
+                logger.warning(f"Failed to generate metadata: {e}")
+                if not title:
+                    title = "Multi-Paper Discussion"
+                if not description:
+                    description = "A discussion of multiple research papers"
+
+        # Update episode
+        supabase.table("podcast_episodes").update({
+            "title": title,
+            "description": description,
+            "script": script_text,
+            "storage_path": storage_path,
+            "audio_url": public_url,
+            "generation_status": "completed",
+            "generation_error": None
+        }).eq("id", episode_id).execute()
+
+        logger.info(f"Multi-paper podcast completed: {episode_id}")
+
+        return {
+            "success": True,
+            "episode_id": episode_id,
+            "audio_url": public_url,
+            "message": f"Multi-paper podcast generated successfully with {len(papers)} papers!"
+        }
+
+    except Exception as e:
+        logger.error(f"Multi-paper podcast generation failed: {e}", exc_info=True)
+
+        if episode_id:
+            supabase.table("podcast_episodes").update({
+                "generation_status": "failed",
+                "generation_error": str(e)
+            }).eq("id", episode_id).execute()
+
+        raise HTTPException(status_code=500, detail=str(e))
