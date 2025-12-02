@@ -1,12 +1,20 @@
 """
-Podcasts router - unified podcast generation for single or multiple papers.
+Podcasts router - unified podcast generation using agent architecture.
+
+Clean implementation using PodcastAgent with tool calling.
 """
 
 import logging
+import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Body
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+from lib.podcasts import PodcastAgent
+from lib.podcasts.audio import generate_audio_from_script, convert_to_mp3
+from lib.podcasts.script import generate_metadata
+from lib.core import GeminiFileManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +24,11 @@ router = APIRouter(prefix="/podcast", tags=["podcasts"])
 # ==================== Request/Response Models ====================
 
 class PodcastGenerationRequest(BaseModel):
-    """
-    Unified request for podcast generation.
-    Works for both single-paper and multi-paper episodes.
-    """
-    paper_ids: List[str]  # Can be 1 or many papers
+    """Unified request for podcast generation."""
+    paper_ids: List[str]  # 1 or many papers
     title: Optional[str] = None
     description: Optional[str] = None
-    theme: Optional[str] = None  # Optional theme/angle for multi-paper episodes
+    theme: Optional[str] = None
     episode_number: Optional[int] = None
     season_number: Optional[int] = None
 
@@ -48,19 +53,25 @@ class EpisodeDetailResponse(BaseModel):
 # ==================== Dependencies ====================
 
 def get_supabase():
-    """Dependency to get Supabase client."""
+    """Get Supabase client."""
     from main import supabase
     return supabase
 
 
 def get_genai_client():
-    """Dependency to get Gemini client."""
+    """Get Gemini client."""
     from main import app
     return app.state.genai_client
 
 
+def get_gemini_manager():
+    """Get GeminiFileManager."""
+    from main import app
+    return app.state.gemini_manager
+
+
 def get_perplexity_api_key():
-    """Dependency to get Perplexity API key."""
+    """Get Perplexity API key."""
     import os
     return os.getenv("PERPLEXITY_API_KEY")
 
@@ -72,63 +83,163 @@ async def generate_podcast(
     request: PodcastGenerationRequest,
     supabase = Depends(get_supabase),
     genai_client = Depends(get_genai_client),
+    gemini_manager = Depends(get_gemini_manager),
     perplexity_api_key = Depends(get_perplexity_api_key)
 ):
     """
-    Generate a podcast episode from one or more research papers.
+    Generate podcast episode from one or more papers using agent architecture.
 
-    This unified endpoint handles:
-    - Single paper episodes (pass 1 paper_id)
-    - Multi-paper episodes (pass multiple paper_ids)
-    - Custom themed episodes (add a theme)
-
-    The generation process:
+    This endpoint:
     1. Fetches paper(s) from database
-    2. Extracts content and generates script using Gemini
-    3. Generates audio using Gemini TTS
-    4. Stores episode in database
+    2. Uploads PDF to Gemini (for single paper)
+    3. Uses PodcastAgent to generate script with research tools
+    4. Generates audio using Gemini TTS
+    5. Stores episode in database
+
+    Works for both single-paper and multi-paper episodes.
     """
+    episode_id = None
+
     try:
         if not request.paper_ids:
-            raise HTTPException(status_code=400, detail="At least one paper_id is required")
+            raise HTTPException(status_code=400, detail="At least one paper_id required")
 
         logger.info(f"Generating podcast for {len(request.paper_ids)} paper(s)")
 
-        # Import the unified generation function
-        from lib.podcast_generator import generate_podcast_from_papers
+        # Fetch papers
+        papers_response = supabase.table("papers").select("*").in_("id", request.paper_ids).execute()
 
-        # Call unified generation function
-        result = await generate_podcast_from_papers(
-            paper_ids=request.paper_ids,
-            supabase=supabase,
+        if not papers_response.data:
+            raise HTTPException(status_code=404, detail="Papers not found")
+
+        papers = papers_response.data
+        logger.info(f"Found {len(papers)} papers")
+
+        # Create episode record
+        episode_data = {
+            "generation_status": "processing",
+            "is_multi_paper": len(papers) > 1,
+            "episode_number": request.episode_number,
+            "season_number": request.season_number
+        }
+
+        if request.title:
+            episode_data["title"] = request.title
+        if request.description:
+            episode_data["description"] = request.description
+
+        episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
+        episode_id = episode_response.data[0]["id"]
+
+        # Create junction table entries
+        for paper in papers:
+            supabase.table("episode_papers").insert({
+                "episode_id": episode_id,
+                "paper_id": paper["id"]
+            }).execute()
+
+        # Initialize podcast agent
+        agent = PodcastAgent(
             genai_client=genai_client,
-            perplexity_api_key=perplexity_api_key,
-            title=request.title,
-            description=request.description,
-            theme=request.theme,
-            episode_number=request.episode_number,
-            season_number=request.season_number
+            perplexity_api_key=perplexity_api_key
         )
+
+        # Generate script
+        if len(papers) == 1:
+            # Single paper - upload PDF and use optimized flow
+            paper = papers[0]
+            pdf_url = _get_storage_url(supabase, paper)
+
+            logger.info("Uploading PDF to Gemini...")
+            async with gemini_manager.upload_pdf_from_url(pdf_url) as gemini_file:
+                script = await agent.generate_single_paper_script(
+                    paper=paper,
+                    pdf_uri=gemini_file.uri
+                )
+        else:
+            # Multi-paper
+            script = await agent.generate_multi_paper_script(
+                papers=papers,
+                theme=request.theme
+            )
+
+        logger.info(f"Script generated: {len(script)} characters")
+
+        # Generate audio
+        logger.info("Generating audio...")
+        audio_data = generate_audio_from_script(script, genai_client)
+
+        # Convert to MP3
+        logger.info("Converting to MP3...")
+        mp3_data = convert_to_mp3(audio_data)
+
+        # Upload to storage
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"episode_{timestamp}.mp3"
+
+        from lib.storage import upload_audio_to_storage, get_public_url
+
+        storage_path = upload_audio_to_storage(
+            audio_data=mp3_data,
+            filename=filename,
+            bucket="episodes"
+        )
+
+        audio_url = get_public_url("episodes", storage_path)
+
+        # Generate metadata if not provided
+        if not request.title or not request.description:
+            metadata = generate_metadata(
+                script=script,
+                papers=papers,
+                genai_client=genai_client,
+                theme=request.theme
+            )
+
+            if not request.title:
+                request.title = metadata["title"]
+            if not request.description:
+                request.description = metadata["description"]
+
+        # Update episode
+        supabase.table("podcast_episodes").update({
+            "title": request.title,
+            "description": request.description,
+            "script": script,
+            "storage_path": storage_path,
+            "audio_url": audio_url,
+            "generation_status": "completed",
+            "generation_error": None
+        }).eq("id", episode_id).execute()
+
+        logger.info(f"Podcast generation complete: {episode_id}")
 
         return PodcastGenerationResponse(
             success=True,
-            episode_id=result["episode_id"],
-            audio_url=result["audio_url"],
-            message=result["message"]
+            episode_id=episode_id,
+            audio_url=audio_url,
+            message=f"Podcast generated successfully!"
         )
 
     except Exception as e:
         logger.error(f"Podcast generation failed: {e}", exc_info=True)
+
+        if episode_id:
+            supabase.table("podcast_episodes").update({
+                "generation_status": "failed",
+                "generation_error": str(e)
+            }).eq("id", episode_id).execute()
+
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/episodes/{episode_id}/regenerate-audio")
-async def regenerate_podcast_audio(
+async def regenerate_audio(
     episode_id: str,
     supabase = Depends(get_supabase),
     genai_client = Depends(get_genai_client)
 ):
-    """Regenerate audio for an existing episode using its stored script."""
+    """Regenerate audio from existing script."""
     try:
         # Fetch episode
         response = supabase.table("podcast_episodes").select("*").eq("id", episode_id).execute()
@@ -140,33 +251,26 @@ async def regenerate_podcast_audio(
         script = episode.get("script")
 
         if not script:
-            raise HTTPException(status_code=400, detail="Episode has no script to regenerate from")
+            raise HTTPException(status_code=400, detail="No script available")
 
         logger.info(f"Regenerating audio for episode: {episode_id}")
 
-        # Import audio generation
-        from lib.podcast_generator import generate_audio_from_script, convert_audio_to_mp3, upload_audio_to_storage
-
         # Generate audio
         audio_data = generate_audio_from_script(script, genai_client)
+        mp3_data = convert_to_mp3(audio_data)
 
-        # Convert to MP3
-        mp3_data = convert_audio_to_mp3(audio_data)
-
-        # Upload to storage
-        import datetime
+        # Upload
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"episode_{timestamp}.mp3"
 
-        from lib.storage import upload_audio_to_storage as upload_audio
-        storage_path = upload_audio(
+        from lib.storage import upload_audio_to_storage, get_public_url
+
+        storage_path = upload_audio_to_storage(
             audio_data=mp3_data,
             filename=filename,
             bucket="episodes"
         )
 
-        # Get public URL
-        from lib.storage import get_public_url
         audio_url = get_public_url("episodes", storage_path)
 
         # Update episode
@@ -181,7 +285,7 @@ async def regenerate_podcast_audio(
             "success": True,
             "episode_id": episode_id,
             "audio_url": audio_url,
-            "message": "Audio regenerated successfully"
+            "message": "Audio regenerated"
         }
 
     except Exception as e:
@@ -190,7 +294,7 @@ async def regenerate_podcast_audio(
 
 
 @router.get("/episodes", response_model=EpisodeListResponse)
-async def list_podcast_episodes(supabase = Depends(get_supabase)):
+async def list_episodes(supabase = Depends(get_supabase)):
     """List all podcast episodes."""
     try:
         response = supabase.table("podcast_episodes")\
@@ -206,8 +310,8 @@ async def list_podcast_episodes(supabase = Depends(get_supabase)):
 
 
 @router.get("/episodes/{episode_id}", response_model=EpisodeDetailResponse)
-async def get_podcast_episode(episode_id: str, supabase = Depends(get_supabase)):
-    """Get a specific podcast episode."""
+async def get_episode(episode_id: str, supabase = Depends(get_supabase)):
+    """Get specific episode."""
     try:
         response = supabase.table("podcast_episodes").select("*").eq("id", episode_id).execute()
 
@@ -222,12 +326,12 @@ async def get_podcast_episode(episode_id: str, supabase = Depends(get_supabase))
 
 
 @router.patch("/episodes/{episode_id}")
-async def update_podcast_episode(
+async def update_episode(
     episode_id: str,
     updates: dict = Body(...),
     supabase = Depends(get_supabase)
 ):
-    """Update podcast episode metadata."""
+    """Update episode metadata."""
     try:
         response = supabase.table("podcast_episodes")\
             .update(updates)\
@@ -242,10 +346,10 @@ async def update_podcast_episode(
 
 
 @router.delete("/episodes/{episode_id}")
-async def delete_podcast_episode(episode_id: str, supabase = Depends(get_supabase)):
-    """Delete a podcast episode."""
+async def delete_episode(episode_id: str, supabase = Depends(get_supabase)):
+    """Delete episode."""
     try:
-        # Fetch episode to get storage path
+        # Fetch episode
         response = supabase.table("podcast_episodes").select("*").eq("id", episode_id).execute()
 
         if not response.data:
@@ -253,7 +357,7 @@ async def delete_podcast_episode(episode_id: str, supabase = Depends(get_supabas
 
         episode = response.data[0]
 
-        # Delete from storage if exists
+        # Delete from storage
         if episode.get("storage_path"):
             from lib.storage import delete_from_storage
             try:
@@ -262,7 +366,7 @@ async def delete_podcast_episode(episode_id: str, supabase = Depends(get_supabas
                     path=episode["storage_path"]
                 )
             except Exception as e:
-                logger.warning(f"Failed to delete audio file: {e}")
+                logger.warning(f"Failed to delete audio: {e}")
 
         # Delete from database
         supabase.table("podcast_episodes").delete().eq("id", episode_id).execute()
@@ -275,8 +379,8 @@ async def delete_podcast_episode(episode_id: str, supabase = Depends(get_supabas
 
 
 @router.get("/feed.xml")
-async def get_podcast_feed(supabase = Depends(get_supabase)):
-    """Get RSS feed for podcast episodes."""
+async def get_feed(supabase = Depends(get_supabase)):
+    """Get RSS feed."""
     try:
         from lib.rss_feed import generate_podcast_rss_feed
 
@@ -291,3 +395,17 @@ async def get_podcast_feed(supabase = Depends(get_supabase)):
     except Exception as e:
         logger.error(f"Failed to generate RSS feed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Helper Functions ====================
+
+def _get_storage_url(supabase, paper: dict) -> str:
+    """Get storage URL for paper PDF."""
+    storage_bucket = paper.get("storage_bucket", "papers")
+    storage_path = paper.get("storage_path")
+
+    if not storage_path:
+        raise ValueError("Paper has no storage_path")
+
+    supabase_url = supabase.supabase_url
+    return f"{supabase_url}/storage/v1/object/public/{storage_bucket}/{storage_path}"
