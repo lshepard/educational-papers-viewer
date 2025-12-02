@@ -41,7 +41,7 @@ const PaperProcessing: React.FC = () => {
 
     try {
       // Call local Python backend instead of Edge Function
-      const response = await fetch(`${config.backendUrl}/extract`, {
+      const response = await fetch(`${config.backendUrl}/papers/extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,7 +117,7 @@ const PaperProcessing: React.FC = () => {
 
       for (const paperId of paperIds) {
         try {
-          const response = await fetch(`${config.backendUrl}/extract`, {
+          const response = await fetch(`${config.backendUrl}/papers/extract`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ paper_id: paperId }),

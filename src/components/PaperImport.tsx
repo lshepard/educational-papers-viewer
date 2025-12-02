@@ -56,7 +56,7 @@ const PaperImport: React.FC = () => {
 
   const handleExtract = async (paperId: string) => {
     try {
-      const response = await fetch(`${config.backendUrl}/extract`, {
+      const response = await fetch(`${config.backendUrl}/papers/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paper_id: paperId })
