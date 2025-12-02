@@ -5,7 +5,7 @@ Comprehensive tests for lib modules - happy path testing.
 import pytest
 from lib.storage import upload_audio_to_storage, get_public_url, delete_from_storage
 from lib.pdf_analyzer import create_paper_slug, PaperSections
-from lib.podcast_generator import convert_audio_to_mp3
+from lib.podcasts.audio import convert_to_mp3
 from lib.rss_feed import format_duration, format_rfc2822_date
 
 
@@ -71,16 +71,19 @@ class TestPDFAnalyzer:
         assert sections.results == "These are the results"
 
 
-class TestPodcastGenerator:
-    """Tests for lib/podcast_generator.py"""
+class TestPodcastAudio:
+    """Tests for lib/podcasts/audio.py"""
 
-    def test_convert_audio_to_mp3(self):
+    def test_convert_to_mp3(self):
         """Test converting audio to MP3 format."""
-        # Create a minimal WAV file (44 bytes header + some data)
-        wav_header = b'RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x00]\x00\x00\x00]\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00'
-        wav_data = wav_header + b'\x00' * 100  # Add some audio data
+        # Create raw PCM audio data (16-bit, 24000 Hz, mono)
+        # Simulating Gemini's output format
+        sample_rate = 24000
+        duration_seconds = 0.1  # 100ms
+        num_samples = int(sample_rate * duration_seconds)
+        pcm_data = b'\x00\x00' * num_samples  # Silent audio
 
-        mp3_data = convert_audio_to_mp3(wav_data, source_format='wav')
+        mp3_data = convert_to_mp3(pcm_data)
         assert isinstance(mp3_data, bytes)
         assert len(mp3_data) > 0
         # MP3 files start with ID3 tag or MPEG sync bytes

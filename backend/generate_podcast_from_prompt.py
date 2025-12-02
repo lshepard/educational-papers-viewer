@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from lib.podcast_generator import generate_audio_from_script
+from lib.podcasts.audio import generate_audio_from_script, convert_to_mp3
 
 # Load environment variables
 load_dotenv()
@@ -227,17 +227,22 @@ Examples:
         logger.info(f"   ✅ Script generated ({len(script)} characters)")
 
         # Generate audio
-        logger.info("\n3. Generating audio with Gemini 2.5 Pro TTS...")
+        logger.info("\n3. Generating audio with Gemini 2.0 Flash TTS...")
         audio_data = generate_audio_from_script(
-            script_text=script,
+            script=script,
             genai_client=genai_client,
             speaker_names=args.speakers
         )
         logger.info(f"   ✅ Audio generated ({len(audio_data)} bytes)")
 
+        # Convert to MP3
+        logger.info("\n4. Converting to MP3...")
+        mp3_data = convert_to_mp3(audio_data)
+        logger.info(f"   ✅ MP3 conversion complete ({len(mp3_data)} bytes)")
+
         # Save files
-        logger.info("\n4. Saving files...")
-        script_path, audio_path = save_files(script, audio_data, args.output)
+        logger.info("\n5. Saving files...")
+        script_path, audio_path = save_files(script, mp3_data, args.output)
 
         # Summary
         logger.info("\n" + "=" * 80)
