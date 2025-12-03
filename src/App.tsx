@@ -29,17 +29,15 @@ function MainApp() {
       <header className="App-header">
         <h1>GenAI Papers Viewer</h1>
         <div className="header-actions">
-          {user ? (
+          {user && (
             <div className="admin-controls">
-              <span className="admin-badge">Admin</span>
+              <Link to="/admin" className="admin-badge">
+                Admin
+              </Link>
               <button onClick={signOut} className="sign-out-btn">
                 Sign Out
               </button>
             </div>
-          ) : (
-            <Link to="/admin/login" className="admin-link">
-              Admin
-            </Link>
           )}
         </div>
       </header>

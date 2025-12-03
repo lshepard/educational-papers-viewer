@@ -51,6 +51,15 @@ body {
   border-radius: 12px;
   font-size: 0.85rem;
   font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.admin-badge:hover {
+  background-color: #e67e22;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .sign-out-btn {
