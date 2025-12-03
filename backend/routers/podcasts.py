@@ -139,16 +139,24 @@ async def generate_podcast(
         papers = papers_response.data
         logger.info(f"Found {len(papers)} papers")
 
-        # Create episode record
+        # Create episode record with temporary title if not provided
+        # (will be updated with AI-generated title after script generation)
+        if not request.title:
+            if len(papers) == 1:
+                temp_title = f"Episode: {papers[0].get('title', 'Untitled Paper')[:80]}"
+            else:
+                temp_title = f"Multi-Paper Episode: {len(papers)} Papers"
+        else:
+            temp_title = request.title
+
         episode_data = {
+            "title": temp_title,
             "generation_status": "processing",
             "is_multi_paper": len(papers) > 1,
             "episode_number": request.episode_number,
             "season_number": request.season_number
         }
 
-        if request.title:
-            episode_data["title"] = request.title
         if request.description:
             episode_data["description"] = request.description
 
