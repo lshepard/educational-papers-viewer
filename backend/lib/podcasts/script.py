@@ -40,6 +40,97 @@ def format_script_for_tts(script: str) -> str:
     return formatted
 
 
+def generate_preliminary_metadata(
+    papers: List[Dict[str, Any]],
+    genai_client: genai.Client,
+    theme: str = None
+) -> Dict[str, str]:
+    """
+    Generate episode title and description from papers BEFORE script generation.
+
+    Used to create an initial title that satisfies DB constraints while being
+    more engaging than just the paper title.
+
+    Args:
+        papers: List of paper metadata dicts
+        genai_client: Gemini client
+        theme: Optional theme/angle
+
+    Returns:
+        Dict with 'title' and 'description'
+    """
+    logger.info("Generating preliminary podcast metadata from paper abstracts...")
+
+    try:
+        # Build papers context
+        papers_context = "\n\n".join([
+            f"Paper {idx + 1}:\n"
+            f"Title: {p.get('title', 'Untitled')}\n"
+            f"Authors: {p.get('authors', 'Unknown')}\n"
+            f"Year: {p.get('year', 'Unknown')}\n"
+            f"Abstract: {p.get('abstract', 'No abstract available')[:500]}"
+            for idx, p in enumerate(papers)
+        ])
+
+        theme_context = f"\n\nTheme: {theme}" if theme else ""
+
+        # Create metadata generation prompt
+        prompt = f"""Generate engaging podcast metadata for an upcoming episode about these research papers.
+
+Papers to discuss:
+{papers_context}{theme_context}
+
+Generate a JSON response with:
+
+1. "title": A SNAPPY, engaging headline (40-80 characters) that makes people want to listen.
+   - Focus on the IMPACT, the surprising finding, or the practical benefit
+   - Use active, punchy language - think podcast episode, not academic paper
+   - Examples of good titles:
+     ✅ "This Simple Math Trick Doubled Student Performance"
+     ✅ "Why Your Teacher's Praise Might Be Backfiring"
+     ✅ "The Hidden Cost of Multitasking (Backed by Science)"
+   - Don't just restate the academic title - translate it into human interest
+
+2. "description": A compelling description (2-3 sentences) with:
+   - What's surprising, useful, or important about this research
+   - Include the actual paper title(s) and authors
+   - Format like:
+
+     Discover [key insight]. We explore "[Paper Title]" by [Authors] ([Year]),
+     which reveals [surprising finding]. Perfect for [target audience].
+
+     📄 Read: [Paper Title] - [URL]
+
+Make it engaging and podcast-friendly, not academic!"""
+
+        response = genai_client.models.generate_content(
+            model='gemini-2.0-flash-exp',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+        )
+
+        metadata = json.loads(response.text)
+
+        title = metadata.get("title", generate_fallback_title(papers))
+        description = metadata.get("description", generate_fallback_description(papers))
+
+        logger.info(f"Generated preliminary metadata - Title: {title}")
+
+        return {
+            "title": title,
+            "description": description
+        }
+
+    except Exception as e:
+        logger.warning(f"Preliminary metadata generation failed, using fallback: {e}")
+        return {
+            "title": generate_fallback_title(papers),
+            "description": generate_fallback_description(papers)
+        }
+
+
 def generate_metadata(
     script: str,
     papers: List[Dict[str, Any]],

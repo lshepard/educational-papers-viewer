@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from lib.podcasts import PodcastAgent
 from lib.podcasts.audio import generate_audio_from_script, convert_to_mp3
-from lib.podcasts.script import generate_metadata
+from lib.podcasts.script import generate_metadata, generate_preliminary_metadata
 from lib.core import GeminiFileManager
 
 logger = logging.getLogger(__name__)
@@ -139,26 +139,29 @@ async def generate_podcast(
         papers = papers_response.data
         logger.info(f"Found {len(papers)} papers")
 
-        # Create episode record with temporary title if not provided
-        # (will be updated with AI-generated title after script generation)
-        if not request.title:
-            if len(papers) == 1:
-                temp_title = f"Episode: {papers[0].get('title', 'Untitled Paper')[:80]}"
-            else:
-                temp_title = f"Multi-Paper Episode: {len(papers)} Papers"
-        else:
-            temp_title = request.title
+        # Generate engaging title/description upfront if not provided
+        # This ensures DB constraints are satisfied with quality content
+        if not request.title or not request.description:
+            logger.info("Generating preliminary metadata from paper abstracts...")
+            preliminary_metadata = generate_preliminary_metadata(
+                papers=papers,
+                genai_client=genai_client,
+                theme=request.theme
+            )
+
+            if not request.title:
+                request.title = preliminary_metadata["title"]
+            if not request.description:
+                request.description = preliminary_metadata["description"]
 
         episode_data = {
-            "title": temp_title,
+            "title": request.title,
+            "description": request.description,
             "generation_status": "processing",
             "is_multi_paper": len(papers) > 1,
             "episode_number": request.episode_number,
             "season_number": request.season_number
         }
-
-        if request.description:
-            episode_data["description"] = request.description
 
         episode_response = supabase.table("podcast_episodes").insert(episode_data).execute()
         episode_id = episode_response.data[0]["id"]
@@ -219,21 +222,8 @@ async def generate_podcast(
 
         audio_url = get_public_url("episodes", storage_path)
 
-        # Generate metadata if not provided
-        if not request.title or not request.description:
-            metadata = generate_metadata(
-                script=script,
-                papers=papers,
-                genai_client=genai_client,
-                theme=request.theme
-            )
-
-            if not request.title:
-                request.title = metadata["title"]
-            if not request.description:
-                request.description = metadata["description"]
-
-        # Update episode
+        # Update episode with final content
+        # (title and description were already generated from abstracts)
         supabase.table("podcast_episodes").update({
             "title": request.title,
             "description": request.description,
