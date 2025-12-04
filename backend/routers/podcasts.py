@@ -448,9 +448,38 @@ async def delete_episode(episode_id: str, supabase = Depends(get_supabase)):
 async def get_feed(supabase = Depends(get_supabase)):
     """Get RSS feed."""
     try:
+        import os
         from lib.rss_feed import generate_podcast_rss_feed
 
-        rss_xml = await generate_podcast_rss_feed(supabase)
+        # Fetch completed episodes
+        episodes_response = supabase.table("podcast_episodes")\
+            .select("*")\
+            .eq("generation_status", "completed")\
+            .order("created_at", desc=True)\
+            .execute()
+
+        episodes = episodes_response.data
+
+        # Feed configuration
+        feed_config = {
+            "title": os.getenv("PODCAST_TITLE", "Research Papers Podcast"),
+            "description": os.getenv("PODCAST_DESCRIPTION", "AI-generated podcasts discussing the latest research papers"),
+            "author": os.getenv("PODCAST_AUTHOR", "Papers Viewer AI"),
+            "owner_name": os.getenv("PODCAST_OWNER_NAME", "Papers Viewer AI"),
+            "owner_email": os.getenv("PODCAST_OWNER_EMAIL", "podcast@example.com"),
+            "language": "en-us",
+            "category": "Science",
+            "subcategory": "Research",
+            "explicit": False,
+            "type": "episodic",
+            "image_url": os.getenv("PODCAST_IMAGE_URL")
+        }
+
+        # Website URL (use environment variable or construct from request)
+        website_url = os.getenv("WEBSITE_URL", "https://papers-viewer.com")
+
+        # Generate RSS feed (not async)
+        rss_xml = generate_podcast_rss_feed(feed_config, episodes, website_url)
 
         return Response(
             content=rss_xml,

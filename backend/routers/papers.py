@@ -43,6 +43,16 @@ class BatchExtractionResponse(BaseModel):
     results: list
 
 
+class ImportPaperRequest(BaseModel):
+    url: str  # Can be arXiv URL, PDF URL, or paper landing page
+
+
+class ImportPaperResponse(BaseModel):
+    success: bool
+    paper_id: str
+    message: str
+
+
 # ==================== Dependencies ====================
 
 def get_extraction_service():
@@ -57,7 +67,54 @@ def get_supabase():
     return supabase
 
 
+def get_scrapegraphai_api_key():
+    """Dependency to get ScrapeGraphAI API key."""
+    import os
+    return os.getenv("SCRAPEGRAPHAI_API_KEY")
+
+
 # ==================== Endpoints ====================
+
+@router.post("/import", response_model=ImportPaperResponse)
+async def import_paper(
+    request: ImportPaperRequest,
+    supabase = Depends(get_supabase),
+    scrapegraphai_api_key = Depends(get_scrapegraphai_api_key)
+):
+    """
+    Import a paper from arXiv, PDF URL, or paper landing page.
+
+    Supports:
+    - arXiv URLs: https://arxiv.org/abs/1234.56789
+    - Direct PDF URLs: https://example.com/paper.pdf
+    - Paper landing pages (uses ScrapeGraphAI to find PDF)
+
+    The import process:
+    1. Detects URL type (arXiv, PDF, or landing page)
+    2. Downloads or locates PDF
+    3. Extracts metadata
+    4. Uploads to Supabase storage
+    5. Creates paper record in database
+    """
+    try:
+        from lib.paper_import import import_paper_from_url
+
+        result = await import_paper_from_url(
+            url=request.url,
+            supabase=supabase,
+            scrapegraphai_api_key=scrapegraphai_api_key
+        )
+
+        return ImportPaperResponse(
+            success=True,
+            paper_id=result["paper_id"],
+            message=result.get("message", "Paper imported successfully")
+        )
+
+    except Exception as e:
+        logger.error(f"Paper import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/extract", response_model=ExtractionResponse)
 async def extract_paper_content(
