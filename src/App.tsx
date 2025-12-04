@@ -7,7 +7,7 @@ import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import PaperProcessing from './components/PaperProcessing';
 import PodcastManager from './components/PodcastManager';
-import PodcastCreator from './components/PodcastCreator';
+import PodcastCreator from './components/podcast/PodcastCreator';
 import PaperImport from './components/PaperImport';
 import { GenaiPaper } from './supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';

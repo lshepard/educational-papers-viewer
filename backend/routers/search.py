@@ -5,7 +5,7 @@ Search router - handles paper search and external API integrations.
 import logging
 import asyncio
 import httpx
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 
@@ -32,6 +32,25 @@ class SearchTestRequest(BaseModel):
 
 class CitationsRequest(BaseModel):
     paper_ids: List[str]
+
+
+class UnifiedSearchRequest(BaseModel):
+    query: str
+    providers: List[str]  # ["papers", "semantic_scholar"]
+    limit: int = 10
+
+
+class UnifiedSource(BaseModel):
+    id: str
+    type: str  # "paper" | "article"
+    source: str  # "database" | "semantic_scholar"
+    title: str
+    authors: Optional[str] = None
+    year: Optional[int] = None
+    abstract: Optional[str] = None
+    url: Optional[str] = None
+    citation_count: Optional[int] = None
+    venue: Optional[str] = None
 
 
 # ==================== Dependencies ====================
@@ -273,3 +292,126 @@ async def fetch_citations(request: CitationsRequest):
     except Exception as e:
         logger.error(f"Citations fetch failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Unified Search Endpoint ====================
+
+@router.post("/unified")
+async def unified_search(request: UnifiedSearchRequest, supabase = Depends(get_supabase)):
+    """
+    Unified search across multiple providers for podcast source selection.
+
+    Searches selected providers in parallel and returns normalized results.
+    Currently supports: "papers" (database), "semantic_scholar"
+    """
+    try:
+        results = []
+        tasks = []
+
+        # Search database papers
+        if "papers" in request.providers:
+            tasks.append(_search_database_papers(supabase, request.query, request.limit))
+
+        # Search Semantic Scholar
+        if "semantic_scholar" in request.providers:
+            tasks.append(_search_semantic_scholar_unified(request.query, request.limit))
+
+        # Execute searches in parallel
+        search_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Combine results
+        for result in search_results:
+            if isinstance(result, Exception):
+                logger.warning(f"Search provider failed: {result}")
+                continue
+            if isinstance(result, list):
+                results.extend(result)
+
+        return {
+            "success": True,
+            "sources": results,
+            "count": len(results)
+        }
+
+    except Exception as e:
+        logger.error(f"Unified search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _search_database_papers(supabase, query: str, limit: int) -> List[UnifiedSource]:
+    """Search database papers and return as UnifiedSource."""
+    try:
+        response = supabase.table("papers").select("*").or_(
+            f"title.ilike.%{query}%,"
+            f"authors.ilike.%{query}%,"
+            f"abstract.ilike.%{query}%,"
+            f"venue.ilike.%{query}%"
+        ).limit(limit).execute()
+
+        sources = []
+        for paper in response.data:
+            sources.append(UnifiedSource(
+                id=paper["id"],
+                type="paper",
+                source="database",
+                title=paper.get("title", "Untitled"),
+                authors=paper.get("authors"),
+                year=paper.get("year"),
+                abstract=paper.get("abstract"),
+                url=paper.get("source_url"),
+                venue=paper.get("venue")
+            ))
+
+        return sources
+
+    except Exception as e:
+        logger.error(f"Database paper search failed: {e}", exc_info=True)
+        return []
+
+
+async def _search_semantic_scholar_unified(query: str, limit: int) -> List[UnifiedSource]:
+    """Search Semantic Scholar and return as UnifiedSource."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.semanticscholar.org/graph/v1/paper/search",
+                params={
+                    "query": query,
+                    "limit": limit,
+                    "fields": "paperId,title,authors,year,abstract,venue,citationCount,externalIds,url"
+                },
+                timeout=30.0
+            )
+
+            if response.status_code == 429:
+                logger.warning("Semantic Scholar rate limited in unified search")
+                return []
+
+            response.raise_for_status()
+            data = response.json()
+
+            sources = []
+            for paper in data.get("data", []):
+                # Format authors
+                authors_str = None
+                if paper.get("authors"):
+                    authors_str = ", ".join([a.get("name", "") for a in paper["authors"]])
+
+                sources.append(UnifiedSource(
+                    id=f"ss-{paper['paperId']}",
+                    type="paper",
+                    source="semantic_scholar",
+                    title=paper.get("title", "Untitled"),
+                    authors=authors_str,
+                    year=paper.get("year"),
+                    abstract=paper.get("abstract"),
+                    url=paper.get("url"),
+                    citation_count=paper.get("citationCount"),
+                    venue=paper.get("venue")
+                ))
+
+            return sources
+
+    except Exception as e:
+        logger.error(f"Semantic Scholar unified search failed: {e}", exc_info=True)
+        return []
