@@ -102,7 +102,7 @@ async def import_paper(
         result = await import_paper_from_url(
             url=request.url,
             supabase=supabase,
-            scrapegraphai_api_key=scrapegraphai_api_key
+            scrapegraph_api_key=scrapegraphai_api_key
         )
 
         return ImportPaperResponse(

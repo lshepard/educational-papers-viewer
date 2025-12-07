@@ -170,7 +170,10 @@ async def generate_podcast(
         for paper in papers:
             supabase.table("episode_papers").insert({
                 "episode_id": episode_id,
-                "paper_id": paper["id"]
+                "paper_id": paper["id"],
+                "paper_title": paper.get("title"),
+                "paper_authors": paper.get("authors"),
+                "paper_year": paper.get("year")
             }).execute()
 
         # Initialize podcast agent
