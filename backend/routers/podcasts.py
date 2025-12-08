@@ -212,14 +212,16 @@ async def generate_podcast(
         mp3_data = convert_to_mp3(audio_data)
 
         # Upload to storage
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"episode_{timestamp}.mp3"
-
         from lib.storage import upload_audio_to_storage, get_public_url
 
+        # Use first paper's ID for storage path, or "multi-paper" for multi-paper episodes
+        paper_id_for_storage = papers[0]["id"] if len(papers) == 1 else "multi-paper"
+
         storage_path = upload_audio_to_storage(
+            supabase=supabase,
             audio_data=mp3_data,
-            filename=filename,
+            paper_id=paper_id_for_storage,
+            episode_id=episode_id,
             bucket="episodes"
         )
 
@@ -329,14 +331,17 @@ async def regenerate_audio(
         mp3_data = convert_to_mp3(audio_data)
 
         # Upload
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"episode_{timestamp}.mp3"
-
         from lib.storage import upload_audio_to_storage, get_public_url
 
+        # Get papers for this episode to determine storage path
+        episode_papers = supabase.table("episode_papers").select("paper_id").eq("episode_id", episode_id).execute()
+        paper_id_for_storage = episode_papers.data[0]["paper_id"] if episode_papers.data and len(episode_papers.data) == 1 else "multi-paper"
+
         storage_path = upload_audio_to_storage(
+            supabase=supabase,
             audio_data=mp3_data,
-            filename=filename,
+            paper_id=paper_id_for_storage,
+            episode_id=episode_id,
             bucket="episodes"
         )
 

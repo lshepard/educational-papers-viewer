@@ -30,6 +30,7 @@ dependencies = [
     "pydub>=0.25.1",
     # Video/Audio downloading
     "yt-dlp>=2024.11.18",
+    "pytest-asyncio>=1.2.0",
 ]
 
 [project.optional-dependencies]

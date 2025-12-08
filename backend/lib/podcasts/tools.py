@@ -113,13 +113,14 @@ async def search_papers(query: str, limit: int = 5) -> str:
             results = []
             for idx, paper in enumerate(papers, 1):
                 title = paper.get("title", "Untitled")
-                authors = ", ".join([a.get("name", "") for a in paper.get("authors", [])[:3]])
-                if len(paper.get("authors", [])) > 3:
+                author_list = paper.get("authors") or []
+                authors = ", ".join([a.get("name", "") for a in author_list[:3]])
+                if len(author_list) > 3:
                     authors += " et al."
                 year = paper.get("year", "Unknown")
                 venue = paper.get("venue", "Unknown")
                 citations = paper.get("citationCount", 0)
-                abstract = paper.get("abstract", "No abstract available")[:300]
+                abstract = (paper.get("abstract") or "No abstract available")[:300]
 
                 results.append(
                     f"{idx}. {title}\n"
