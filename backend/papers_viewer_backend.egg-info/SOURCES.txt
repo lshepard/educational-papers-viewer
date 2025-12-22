@@ -2,9 +2,8 @@ README.md
 main.py
 pyproject.toml
 lib/__init__.py
-lib/custom_podcast.py
+lib/paper_import.py
 lib/pdf_analyzer.py
-lib/podcast_generator.py
 lib/research.py
 lib/rss_feed.py
 lib/storage.py
@@ -15,4 +14,5 @@ papers_viewer_backend.egg-info/requires.txt
 papers_viewer_backend.egg-info/top_level.txt
 tests/test_extraction_integration.py
 tests/test_lib_modules.py
+tests/test_podcast_generation.py
 tests/test_search.py

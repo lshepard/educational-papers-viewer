@@ -13,6 +13,7 @@ pydantic>=2.10.0
 pytest>=8.4.2
 pydub>=0.25.1
 yt-dlp>=2024.11.18
+pytest-asyncio>=1.2.0
 
 [dev]
 pytest>=7.4.3

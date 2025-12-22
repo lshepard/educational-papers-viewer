@@ -50,7 +50,7 @@ def generate_audio_from_script(
 
         # Generate audio
         response = genai_client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-pro-preview-tts",
             contents=script,
             config=types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
