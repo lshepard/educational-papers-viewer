@@ -1,4 +1,5 @@
-import { supabase, Paper } from '../supabase'
+import { supabase, Paper, PaperNote } from '../supabase'
+import config from '../config'
 
 export interface PaperSection {
   id: string
@@ -75,6 +76,127 @@ export class PapersService {
       }))
     } catch (error) {
       console.error('Failed to search paper sections:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Full-text search across paper content using PostgreSQL FTS
+   * Returns unique paper IDs that match the search query
+   *
+   * @param query - Search query string
+   * @param limit - Maximum number of paper IDs to return
+   * @returns Array of paper IDs that have matching content
+   */
+  static async searchPaperIds(query: string, limit: number = 100): Promise<string[]> {
+    try {
+      const { data, error } = await supabase
+        .from('paper_sections')
+        .select('paper_id')
+        .textSearch('fts', query, {
+          type: 'websearch',
+          config: 'english'
+        })
+        .limit(limit * 3) // Fetch more to account for deduplication
+
+      if (error) throw error
+
+      // Get unique paper IDs
+      const uniqueIds = Array.from(new Set(data?.map(section => section.paper_id) || []))
+      return uniqueIds.slice(0, limit)
+    } catch (error) {
+      console.error('Failed to search paper content:', error)
+      return []
+    }
+  }
+
+  /**
+   * Get all papers with their notes (left join)
+   *
+   * @returns Array of papers with optional note data
+   */
+  static async getAllPapersWithNotes(): Promise<(Paper & { note?: PaperNote })[]> {
+    try {
+      // Fetch papers
+      const { data: papers, error: papersError } = await supabase
+        .from('papers')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (papersError) throw papersError
+
+      // Fetch all notes
+      const { data: notes, error: notesError } = await supabase
+        .from('paper_notes')
+        .select('*')
+
+      if (notesError) throw notesError
+
+      // Create a map of paper_id -> note
+      const notesMap = new Map<string, PaperNote>()
+      for (const note of notes || []) {
+        notesMap.set(note.paper_id, note)
+      }
+
+      // Merge papers with notes
+      return (papers || []).map(paper => ({
+        ...paper,
+        note: notesMap.get(paper.id)
+      }))
+    } catch (error) {
+      console.error('Failed to fetch papers with notes:', error)
+      return []
+    }
+  }
+
+  /**
+   * Get notes for a specific paper
+   *
+   * @param paperId - Paper ID
+   * @returns Paper note or null if not found
+   */
+  static async getPaperNotes(paperId: string): Promise<PaperNote | null> {
+    try {
+      const response = await fetch(`${config.backendUrl}/papers/${paperId}/notes`)
+      if (!response.ok) throw new Error('Failed to fetch notes')
+      const data = await response.json()
+      return data.id ? data : null
+    } catch (error) {
+      console.error('Failed to fetch paper notes:', error)
+      return null
+    }
+  }
+
+  /**
+   * Update notes and rating for a paper
+   *
+   * @param paperId - Paper ID
+   * @param rating - Rating value or null
+   * @param notes - Notes text or null
+   * @returns Updated paper note
+   */
+  static async updatePaperNotes(
+    paperId: string,
+    rating: 'ignore' | 'ok' | 'highlight' | null,
+    notes: string | null
+  ): Promise<PaperNote> {
+    try {
+      const response = await fetch(`${config.backendUrl}/papers/${paperId}/notes`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rating, notes }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to update notes')
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to update paper notes:', error)
       throw error
     }
   }

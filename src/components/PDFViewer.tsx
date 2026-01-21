@@ -1,12 +1,13 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import ReactMarkdown from 'react-markdown'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { GenaiPaper, supabase } from '../supabase'
+import { GenaiPaper, PaperNote, supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import PaperUploadEdit from './PaperUploadEdit'
 import { PodcastService, PodcastEpisode } from '../services/podcastService'
+import { PapersService } from '../services/papersService'
 import config from '../config'
 
 // Set up the worker for react-pdf - use matching version from unpkg
@@ -46,6 +47,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
   const [generatingPodcast, setGeneratingPodcast] = useState<boolean>(false)
   const [podcastStatus, setPodcastStatus] = useState<string>('')
   const { user } = useAuth()
+
+  // Notes state
+  const [, setPaperNote] = useState<PaperNote | null>(null)
+  const [noteRating, setNoteRating] = useState<'ignore' | 'ok' | 'highlight' | null>(null)
+  const [noteText, setNoteText] = useState<string>('')
+  const [noteSaveStatus, setNoteSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const noteSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadContent = useCallback(async () => {
     setLoading(true)
@@ -121,6 +129,51 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     }
   }, [paper.id])
 
+  const loadPaperNotes = useCallback(async () => {
+    try {
+      const note = await PapersService.getPaperNotes(paper.id)
+      setPaperNote(note)
+      setNoteRating(note?.rating || null)
+      setNoteText(note?.notes || '')
+    } catch (err) {
+      console.error('Failed to load paper notes:', err)
+    }
+  }, [paper.id])
+
+  const saveNotes = useCallback(async (rating: 'ignore' | 'ok' | 'highlight' | null, notes: string) => {
+    setNoteSaveStatus('saving')
+    try {
+      const updated = await PapersService.updatePaperNotes(paper.id, rating, notes || null)
+      setPaperNote(updated)
+      setNoteSaveStatus('saved')
+      // Reset to idle after 2 seconds
+      setTimeout(() => setNoteSaveStatus('idle'), 2000)
+    } catch (err) {
+      console.error('Failed to save notes:', err)
+      setNoteSaveStatus('error')
+    }
+  }, [paper.id])
+
+  // Debounced save for note text changes
+  const handleNoteTextChange = useCallback((text: string) => {
+    setNoteText(text)
+    setNoteSaveStatus('idle')
+
+    if (noteSaveTimeoutRef.current) {
+      clearTimeout(noteSaveTimeoutRef.current)
+    }
+
+    noteSaveTimeoutRef.current = setTimeout(() => {
+      saveNotes(noteRating, text)
+    }, 500)
+  }, [noteRating, saveNotes])
+
+  // Immediate save for rating changes
+  const handleRatingChange = useCallback((rating: 'ignore' | 'ok' | 'highlight' | null) => {
+    setNoteRating(rating)
+    saveNotes(rating, noteText)
+  }, [noteText, saveNotes])
+
   const handleGeneratePodcast = async () => {
     if (generatingPodcast) return
 
@@ -146,11 +199,21 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
     }
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadContent()
     loadImages()
     loadPodcastEpisode()
-  }, [loadContent, loadImages, loadPodcastEpisode])
+    loadPaperNotes()
+  }, [loadContent, loadImages, loadPodcastEpisode, loadPaperNotes])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (noteSaveTimeoutRef.current) {
+        clearTimeout(noteSaveTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const getImageUrl = (image: PaperImage): string => {
     const bucket = paper.storage_bucket || 'papers'
@@ -460,6 +523,49 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ paper, onClose }) => {
                 </button>
               </div>
             )}
+
+            {/* My Notes section */}
+            <div className="metadata-section notes-section">
+              <h3>My Notes</h3>
+
+              <div className="rating-buttons">
+                <button
+                  className={`rating-btn ignore ${noteRating === 'ignore' ? 'active' : ''}`}
+                  onClick={() => handleRatingChange(noteRating === 'ignore' ? null : 'ignore')}
+                  title="Ignore"
+                >
+                  Ignore
+                </button>
+                <button
+                  className={`rating-btn ok ${noteRating === 'ok' ? 'active' : ''}`}
+                  onClick={() => handleRatingChange(noteRating === 'ok' ? null : 'ok')}
+                  title="Ok"
+                >
+                  Ok
+                </button>
+                <button
+                  className={`rating-btn highlight ${noteRating === 'highlight' ? 'active' : ''}`}
+                  onClick={() => handleRatingChange(noteRating === 'highlight' ? null : 'highlight')}
+                  title="Highlight"
+                >
+                  Highlight
+                </button>
+              </div>
+
+              <textarea
+                className="notes-textarea"
+                value={noteText}
+                onChange={(e) => handleNoteTextChange(e.target.value)}
+                placeholder="Add your notes about this paper..."
+                rows={4}
+              />
+
+              <div className="notes-save-status">
+                {noteSaveStatus === 'saving' && <span className="saving">Saving...</span>}
+                {noteSaveStatus === 'saved' && <span className="saved">Saved</span>}
+                {noteSaveStatus === 'error' && <span className="error">Error saving</span>}
+              </div>
+            </div>
           </div>
         </div>
 

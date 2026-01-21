@@ -32,4 +32,13 @@ export interface Paper {
 // Legacy alias for backward compatibility
 export type GenaiPaper = Paper
 
+export interface PaperNote {
+  id?: string
+  paper_id: string
+  rating?: 'ignore' | 'ok' | 'highlight' | null
+  notes?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
 export const supabase = createClient(supabaseUrl, supabaseKey)

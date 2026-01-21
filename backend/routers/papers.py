@@ -53,6 +53,20 @@ class ImportPaperResponse(BaseModel):
     message: str
 
 
+class PaperNoteRequest(BaseModel):
+    rating: Optional[str] = None  # 'ignore', 'ok', 'highlight', or None
+    notes: Optional[str] = None
+
+
+class PaperNoteResponse(BaseModel):
+    id: Optional[str] = None
+    paper_id: str
+    rating: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # ==================== Dependencies ====================
 
 def get_extraction_service():
@@ -290,4 +304,103 @@ async def get_processing_stats(supabase = Depends(get_supabase)):
 
     except Exception as e:
         logger.error(f"Failed to get processing stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{paper_id}/notes", response_model=PaperNoteResponse)
+async def get_paper_notes(paper_id: str, supabase = Depends(get_supabase)):
+    """
+    Get notes and rating for a specific paper.
+
+    Returns the note record if it exists, or a default response if not.
+    """
+    try:
+        response = supabase.table("paper_notes").select("*").eq("paper_id", paper_id).execute()
+
+        if response.data:
+            note = response.data[0]
+            return PaperNoteResponse(
+                id=note["id"],
+                paper_id=note["paper_id"],
+                rating=note.get("rating"),
+                notes=note.get("notes"),
+                created_at=note.get("created_at"),
+                updated_at=note.get("updated_at"),
+            )
+        else:
+            # Return empty response for paper with no notes
+            return PaperNoteResponse(paper_id=paper_id)
+
+    except Exception as e:
+        logger.error(f"Failed to get paper notes: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{paper_id}/notes", response_model=PaperNoteResponse)
+async def update_paper_notes(
+    paper_id: str,
+    request: PaperNoteRequest,
+    supabase = Depends(get_supabase)
+):
+    """
+    Create or update notes and rating for a paper (upsert).
+
+    If a note record exists, it will be updated. Otherwise, a new one is created.
+    """
+    try:
+        # Validate rating if provided
+        if request.rating and request.rating not in ('ignore', 'ok', 'highlight'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid rating: {request.rating}. Must be 'ignore', 'ok', or 'highlight'"
+            )
+
+        # Check if note exists
+        existing = supabase.table("paper_notes").select("id").eq("paper_id", paper_id).execute()
+
+        from datetime import datetime
+        now = datetime.utcnow().isoformat()
+
+        if existing.data:
+            # Update existing note
+            update_data = {"updated_at": now}
+            if request.rating is not None:
+                update_data["rating"] = request.rating if request.rating else None
+            if request.notes is not None:
+                update_data["notes"] = request.notes if request.notes else None
+
+            response = (
+                supabase.table("paper_notes")
+                .update(update_data)
+                .eq("paper_id", paper_id)
+                .execute()
+            )
+        else:
+            # Create new note
+            insert_data = {
+                "paper_id": paper_id,
+                "rating": request.rating if request.rating else None,
+                "notes": request.notes if request.notes else None,
+                "created_at": now,
+                "updated_at": now,
+            }
+            response = supabase.table("paper_notes").insert(insert_data).execute()
+
+        if response.data:
+            note = response.data[0]
+            return PaperNoteResponse(
+                id=note["id"],
+                paper_id=note["paper_id"],
+                rating=note.get("rating"),
+                notes=note.get("notes"),
+                created_at=note.get("created_at"),
+                updated_at=note.get("updated_at"),
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save paper notes")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update paper notes: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

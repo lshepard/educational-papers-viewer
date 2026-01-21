@@ -2051,3 +2051,285 @@ body {
     padding: 1rem;
   }
 }
+
+/* ==================== Paper Notes & Ratings ==================== */
+
+/* Search wrapper */
+.search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 300px;
+  display: flex;
+  align-items: center;
+}
+
+.search-wrapper .search-input {
+  width: 100%;
+}
+
+.search-indicator {
+  position: absolute;
+  right: 12px;
+  font-size: 0.8rem;
+  color: #7f8c8d;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Rating badges in table */
+.rating-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+.rating-badge.highlight {
+  background-color: #27ae60;
+  color: white;
+}
+
+.rating-badge.ok {
+  background-color: #95a5a6;
+  color: white;
+  font-size: 0.5rem;
+}
+
+.rating-badge.ignore {
+  background-color: #e74c3c;
+  color: white;
+  font-size: 0.65rem;
+}
+
+/* Row styling based on rating */
+.paper-row.highlight {
+  background-color: rgba(39, 174, 96, 0.05);
+}
+
+.paper-row.ignore {
+  background-color: rgba(231, 76, 60, 0.03);
+  opacity: 0.7;
+}
+
+.paper-row.highlight:hover {
+  background-color: rgba(39, 174, 96, 0.1);
+}
+
+.paper-row.ignore:hover {
+  background-color: rgba(231, 76, 60, 0.08);
+  opacity: 1;
+}
+
+/* Date column (was year) */
+.paper-date {
+  text-align: center;
+  font-weight: 500;
+  color: #2c3e50;
+  white-space: nowrap;
+}
+
+/* Notes section in sidebar */
+.notes-section {
+  border-top: 1px solid #e9ecef;
+  padding-top: 1rem;
+  margin-top: 1rem;
+}
+
+.notes-section h3 {
+  margin-bottom: 1rem;
+}
+
+/* Rating buttons */
+.rating-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.rating-btn {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.rating-btn:hover {
+  border-color: #bbb;
+}
+
+.rating-btn.ignore {
+  color: #e74c3c;
+}
+
+.rating-btn.ignore:hover,
+.rating-btn.ignore.active {
+  background-color: #e74c3c;
+  border-color: #e74c3c;
+  color: white;
+}
+
+.rating-btn.ok {
+  color: #7f8c8d;
+}
+
+.rating-btn.ok:hover,
+.rating-btn.ok.active {
+  background-color: #95a5a6;
+  border-color: #95a5a6;
+  color: white;
+}
+
+.rating-btn.highlight {
+  color: #27ae60;
+}
+
+.rating-btn.highlight:hover,
+.rating-btn.highlight.active {
+  background-color: #27ae60;
+  border-color: #27ae60;
+  color: white;
+}
+
+/* Notes textarea */
+.notes-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+  transition: border-color 0.2s;
+}
+
+.notes-textarea:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.notes-textarea::placeholder {
+  color: #aaa;
+}
+
+/* Save status */
+.notes-save-status {
+  height: 1.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.notes-save-status .saving {
+  color: #7f8c8d;
+}
+
+.notes-save-status .saved {
+  color: #27ae60;
+}
+
+.notes-save-status .error {
+  color: #e74c3c;
+}
+
+/* Rating filter multi-select dropdown */
+.rating-filter-dropdown {
+  position: relative;
+}
+
+.rating-filter-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  font-size: 1rem;
+  cursor: pointer;
+  min-width: 150px;
+  justify-content: space-between;
+  transition: border-color 0.2s;
+}
+
+.rating-filter-button:hover {
+  border-color: #bbb;
+}
+
+.rating-filter-button:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.dropdown-arrow {
+  font-size: 0.7rem;
+  color: #666;
+}
+
+.rating-filter-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  padding: 0.5rem 0;
+}
+
+.rating-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.rating-filter-option:hover {
+  background-color: #f5f5f5;
+}
+
+.rating-filter-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.rating-label {
+  font-size: 0.9rem;
+}
+
+.rating-label.highlight {
+  color: #27ae60;
+}
+
+.rating-label.ok {
+  color: #7f8c8d;
+}
+
+.rating-label.ignore {
+  color: #e74c3c;
+}
+
+.rating-label.unrated {
+  color: #95a5a6;
+}
