@@ -142,17 +142,11 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
       })
     }
 
-    // Sort by most recent first (year, then month)
+    // Sort by import date (created_at) descending - most recently imported first
     filtered = [...filtered].sort((a, b) => {
-      // First by year (descending)
-      const yearA = a.year || 0
-      const yearB = b.year || 0
-      if (yearB !== yearA) return yearB - yearA
-
-      // Then by month (descending)
-      const monthA = a.month || 0
-      const monthB = b.month || 0
-      return monthB - monthA
+      const dateA = new Date(a.created_at).getTime()
+      const dateB = new Date(b.created_at).getTime()
+      return dateB - dateA
     })
 
     setFilteredPapers(filtered)
