@@ -15,14 +15,36 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 // Default: show all except ignored
 const DEFAULT_RATING_FILTERS: Set<RatingOption> = new Set<RatingOption>(['highlight', 'ok', 'unrated'])
 
+// localStorage keys
+const STORAGE_KEYS = {
+  searchTerm: 'papers-filter-search',
+  fileKind: 'papers-filter-fileKind',
+  year: 'papers-filter-year',
+  month: 'papers-filter-month',
+  ratings: 'papers-filter-ratings',
+}
+
+const loadRatingFilters = (): Set<RatingOption> => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.ratings)
+    if (stored) {
+      const arr = JSON.parse(stored) as RatingOption[]
+      return new Set<RatingOption>(arr)
+    }
+  } catch (e) {
+    console.error('Failed to load rating filters:', e)
+  }
+  return DEFAULT_RATING_FILTERS
+}
+
 const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
   const [papers, setPapers] = useState<PaperWithNote[]>([])
   const [filteredPapers, setFilteredPapers] = useState<PaperWithNote[]>([])
-  const [searchTerm, setSearchTerm] = useState('')
-  const [fileKindFilter, setFileKindFilter] = useState<string>('')
-  const [yearFilter, setYearFilter] = useState<string>('')
-  const [monthFilter, setMonthFilter] = useState<string>('')
-  const [ratingFilters, setRatingFilters] = useState<Set<RatingOption>>(DEFAULT_RATING_FILTERS)
+  const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem(STORAGE_KEYS.searchTerm) || '')
+  const [fileKindFilter, setFileKindFilter] = useState<string>(() => localStorage.getItem(STORAGE_KEYS.fileKind) || '')
+  const [yearFilter, setYearFilter] = useState<string>(() => localStorage.getItem(STORAGE_KEYS.year) || '')
+  const [monthFilter, setMonthFilter] = useState<string>(() => localStorage.getItem(STORAGE_KEYS.month) || '')
+  const [ratingFilters, setRatingFilters] = useState<Set<RatingOption>>(loadRatingFilters)
   const [showRatingDropdown, setShowRatingDropdown] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [ftsMatchingIds, setFtsMatchingIds] = useState<Set<string> | null>(null)
@@ -32,6 +54,27 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
   useEffect(() => {
     fetchPapers()
   }, [])
+
+  // Persist filters to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.searchTerm, searchTerm)
+  }, [searchTerm])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.fileKind, fileKindFilter)
+  }, [fileKindFilter])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.year, yearFilter)
+  }, [yearFilter])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.month, monthFilter)
+  }, [monthFilter])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.ratings, JSON.stringify(Array.from(ratingFilters)))
+  }, [ratingFilters])
 
   // Close dropdown when clicking outside
   useEffect(() => {
