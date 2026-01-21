@@ -225,7 +225,7 @@ async def generate_podcast(
             bucket="episodes"
         )
 
-        audio_url = get_public_url("episodes", storage_path)
+        audio_url = get_public_url(supabase, "episodes", storage_path)
 
         # Update episode with final content
         # (title and description were already generated from abstracts)
@@ -345,7 +345,7 @@ async def regenerate_audio(
             bucket="episodes"
         )
 
-        audio_url = get_public_url("episodes", storage_path)
+        audio_url = get_public_url(supabase, "episodes", storage_path)
 
         # Update episode
         supabase.table("podcast_episodes").update({

@@ -33,9 +33,21 @@ async def fetch_date_from_scale(client: httpx.AsyncClient, source_url: str) -> t
 
     soup = BeautifulSoup(response.text, "lxml")
 
-    # Look for date pattern (MM/YYYY) in the page text
+    # Look for <time datetime="2025-01-01T12:00:00Z"> element
+    time_elem = soup.find("time", {"datetime": True})
+    if time_elem:
+        datetime_str = time_elem.get("datetime", "")
+        # Parse ISO datetime: 2025-01-01T12:00:00Z
+        date_match = re.match(r"(\d{4})-(\d{2})-(\d{2})", datetime_str)
+        if date_match:
+            year = int(date_match.group(1))
+            month = int(date_match.group(2))
+            if 1 <= month <= 12:
+                return month, year
+
+    # Fallback: look for MM/YYYY pattern in text
     text = soup.get_text()
-    date_match = re.search(r"\((\d{1,2})/(\d{4})\)", text)
+    date_match = re.search(r"(\d{1,2})/(\d{4})", text)
     if date_match:
         month = int(date_match.group(1))
         year = int(date_match.group(2))
@@ -55,18 +67,18 @@ async def main():
 
     supabase = create_client(supabase_url, supabase_key)
 
-    # Fetch Stanford SCALE papers with null published_at
-    print("Fetching Stanford SCALE papers with null published_at...")
+    # Fetch Stanford SCALE papers with null month
+    print("Fetching Stanford SCALE papers with null month...")
     response = (
         supabase.table("papers")
         .select("id, source_url, title, month, year, published_at")
         .eq("source_type", "stanford_scale")
-        .is_("published_at", "null")
+        .is_("month", "null")
         .execute()
     )
 
     papers = response.data
-    print(f"Found {len(papers)} Stanford SCALE papers with null published_at\n")
+    print(f"Found {len(papers)} Stanford SCALE papers with null month\n")
 
     if not papers:
         print("No papers to update.")
