@@ -217,12 +217,20 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
     return months
   }
 
-  const formatDate = (month: number | null, year: number | null): string => {
-    if (!year) return '-'
-    if (month && month >= 1 && month <= 12) {
-      return `${MONTH_NAMES[month - 1]} ${year}`
+  const formatDate = (paper: PaperWithNote): string => {
+    // Prefer published_at if available
+    if (paper.published_at) {
+      const date = new Date(paper.published_at)
+      const month = date.getUTCMonth()
+      const year = date.getUTCFullYear()
+      return `${MONTH_NAMES[month]} ${year}`
     }
-    return year.toString()
+    // Fall back to month/year fields
+    if (!paper.year) return '-'
+    if (paper.month && paper.month >= 1 && paper.month <= 12) {
+      return `${MONTH_NAMES[paper.month - 1]} ${paper.year}`
+    }
+    return paper.year.toString()
   }
 
   const getRatingBadge = (rating: string | null | undefined) => {
@@ -386,7 +394,7 @@ const PapersList: React.FC<PapersListProps> = ({ onSelectPaper }) => {
                   {paper.authors || 'Unknown'}
                 </td>
                 <td className="paper-date">
-                  {formatDate(paper.month, paper.year)}
+                  {formatDate(paper)}
                 </td>
                 <td className="paper-venue">
                   {paper.venue || '-'}

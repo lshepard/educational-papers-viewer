@@ -16,6 +16,7 @@ export interface Paper {
   authors: string | null
   month: number | null
   year: number | null
+  published_at: string | null  // DATE as ISO string
   venue: string | null
   application: string | null
   users: string | null

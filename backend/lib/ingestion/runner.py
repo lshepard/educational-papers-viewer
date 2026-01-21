@@ -172,6 +172,11 @@ async def import_paper(
         if paper.venue:
             update_data["venue"] = paper.venue
 
+        # Set published_at date (first of month if we have month, else Jan 1)
+        if paper.year:
+            month = paper.month if paper.month else 1
+            update_data["published_at"] = f"{paper.year}-{month:02d}-01"
+
         supabase.table("papers").update(update_data).eq("id", paper_id).execute()
 
         return paper_id
