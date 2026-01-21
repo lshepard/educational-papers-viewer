@@ -31,6 +31,9 @@ dependencies = [
     # Video/Audio downloading
     "yt-dlp>=2024.11.18",
     "pytest-asyncio>=1.2.0",
+    # Web scraping
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
 ]
 
 [project.optional-dependencies]

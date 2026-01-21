@@ -54,6 +54,14 @@ const AdminDashboard: React.FC = () => {
 
       <div className="admin-dashboard-content">
         <div className="admin-card">
+          <h2>🔄 Paper Ingestion</h2>
+          <p>Automatically scrape and import papers from Stanford SCALE repository</p>
+          <Link to="/admin/ingestion" className="admin-card-button">
+            Run Ingestion
+          </Link>
+        </div>
+
+        <div className="admin-card">
           <h2>📄 Import Paper</h2>
           <p>Add papers from arXiv or direct PDF links</p>
           <Link to="/admin/import" className="admin-card-button">

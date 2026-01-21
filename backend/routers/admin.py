@@ -3,8 +3,8 @@ Admin router - handles paper import and administrative functions.
 """
 
 import logging
-from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional, List
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,22 @@ class ImportPaperResponse(BaseModel):
     success: bool
     paper_id: str
     message: str
+
+
+class IngestionRequest(BaseModel):
+    source: str = "stanford_scale"
+    max_pages: Optional[int] = None  # Limit pages for testing
+    auto_extract: bool = True  # Whether to auto-extract content after import
+
+
+class IngestionResponse(BaseModel):
+    success: bool
+    status: str
+    pages_scanned: int
+    papers_found: int
+    papers_imported: int
+    papers_skipped: int
+    errors: List[str]
 
 
 # ==================== Dependencies ====================
@@ -124,4 +140,77 @@ async def populate_research_metadata(
 
     except Exception as e:
         logger.error(f"Research metadata population failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_extraction_service(request: Request):
+    """Dependency to get extraction service from app state."""
+    return request.app.state.extraction_service
+
+
+@router.post("/run-ingestion", response_model=IngestionResponse)
+async def run_ingestion(
+    request: IngestionRequest,
+    supabase=Depends(get_supabase),
+    extraction_service=Depends(get_extraction_service),
+):
+    """
+    Run paper ingestion from a configured source.
+
+    Currently supported sources:
+    - stanford_scale: Stanford SCALE AI in Education repository
+
+    The ingestion process:
+    1. Scrapes the source for papers (paginated)
+    2. Checks which papers already exist (by source_url)
+    3. Stops early when all papers on a page already exist
+    4. Downloads PDFs and imports new papers
+    5. Optionally extracts content (sections/images)
+
+    Query parameters:
+    - source: Source to ingest from (default: stanford_scale)
+    - max_pages: Limit pages to scan (for testing)
+    - auto_extract: Whether to extract content after import (default: true)
+    """
+    try:
+        from lib.ingestion import run_ingestion as do_run_ingestion
+        from lib.ingestion.stanford_scale import StanfordScaleSource
+
+        # Select source
+        if request.source == "stanford_scale":
+            source = StanfordScaleSource()
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unknown source: {request.source}"
+            )
+
+        logger.info(f"Starting ingestion from {request.source}")
+
+        # Run ingestion
+        result = await do_run_ingestion(
+            source=source,
+            supabase=supabase,
+            extraction_service=extraction_service if request.auto_extract else None,
+            max_pages=request.max_pages,
+        )
+
+        logger.info(
+            f"Ingestion complete: {result.papers_imported} imported, "
+            f"{result.papers_skipped} skipped, {len(result.errors)} errors"
+        )
+
+        return IngestionResponse(
+            success=result.status == "completed",
+            status=result.status,
+            pages_scanned=result.pages_scanned,
+            papers_found=result.papers_found,
+            papers_imported=result.papers_imported,
+            papers_skipped=result.papers_skipped,
+            errors=result.errors,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ingestion failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

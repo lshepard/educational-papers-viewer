@@ -9,6 +9,7 @@ import PaperProcessing from './components/PaperProcessing';
 import PodcastManager from './components/PodcastManager';
 import PodcastCreator from './components/podcast/PodcastCreator';
 import PaperImport from './components/PaperImport';
+import PaperIngestion from './components/PaperIngestion';
 import { GenaiPaper } from './supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -68,6 +69,7 @@ function App() {
           <Route path="/admin/podcast-manager" element={<PodcastManager />} />
           <Route path="/admin/podcast-creator" element={<PodcastCreator />} />
           <Route path="/admin/import" element={<PaperImport />} />
+          <Route path="/admin/ingestion" element={<PaperIngestion />} />
         </Routes>
       </Router>
     </AuthProvider>
