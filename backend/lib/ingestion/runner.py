@@ -167,6 +167,8 @@ async def import_paper(
             update_data["authors"] = paper.authors
         if paper.year:
             update_data["year"] = paper.year
+        if paper.month:
+            update_data["month"] = paper.month
         if paper.venue:
             update_data["venue"] = paper.venue
 

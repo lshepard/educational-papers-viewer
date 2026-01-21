@@ -80,6 +80,7 @@ class StanfordScaleSource(PaperSource):
                     title=title,
                     authors=metadata.get("authors"),
                     year=metadata.get("year"),
+                    month=metadata.get("month"),
                     venue=metadata.get("venue"),
                     paper_url=None,  # Will be fetched from detail page
                     source_metadata=metadata.get("tags", {}),
@@ -115,7 +116,7 @@ class StanfordScaleSource(PaperSource):
             month = date_match.group(1)
             year = date_match.group(2)
             metadata["year"] = int(year)
-            metadata["month"] = month
+            metadata["month"] = int(month)
 
             # Authors are before the date
             authors_text = full_text[: date_match.start()].strip()

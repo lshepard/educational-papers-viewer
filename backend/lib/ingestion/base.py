@@ -15,6 +15,7 @@ class PaperMetadata:
     title: str
     authors: Optional[str] = None
     year: Optional[int] = None
+    month: Optional[int] = None
     venue: Optional[str] = None
     paper_url: Optional[str] = None  # Actual paper/PDF URL
     source_metadata: dict = field(default_factory=dict)  # Source-specific tags
