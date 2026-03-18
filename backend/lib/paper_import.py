@@ -8,12 +8,101 @@ Extracts metadata and uploads to Supabase storage.
 import logging
 import tempfile
 import re
+import json
+import os
 from typing import Dict, Any, Optional
 from pathlib import Path
 import httpx
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+# Cookie storage file for Cloudflare-protected sites
+COOKIE_FILE = Path(__file__).parent.parent / ".cookies.json"
+
+
+def load_cookies(domain: str) -> Dict[str, str]:
+    """Load saved cookies for a domain."""
+    if not COOKIE_FILE.exists():
+        return {}
+    try:
+        with open(COOKIE_FILE, 'r') as f:
+            all_cookies = json.load(f)
+            return all_cookies.get(domain, {})
+    except Exception:
+        return {}
+
+
+def save_cookies(domain: str, cookies: Dict[str, str]):
+    """Save cookies for a domain."""
+    try:
+        all_cookies = {}
+        if COOKIE_FILE.exists():
+            with open(COOKIE_FILE, 'r') as f:
+                all_cookies = json.load(f)
+        all_cookies[domain] = cookies
+        with open(COOKIE_FILE, 'w') as f:
+            json.dump(all_cookies, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save cookies: {e}")
+
+
+async def download_pdf_with_scraperapi(url: str, output_path: Path) -> bool:
+    """
+    Download PDF using ScraperAPI to bypass Cloudflare.
+
+    ScraperAPI handles anti-bot measures including Cloudflare.
+    Requires SCRAPERAPI_KEY environment variable.
+    """
+    api_key = os.getenv("SCRAPERAPI_KEY")
+    if not api_key:
+        logger.warning("SCRAPERAPI_KEY not set, skipping ScraperAPI")
+        return False
+
+    try:
+        # ScraperAPI URL format
+        proxy_url = f"https://api.scraperapi.com?api_key={api_key}&url={url}&render=true"
+
+        logger.info(f"Downloading via ScraperAPI: {url}")
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.get(proxy_url)
+            response.raise_for_status()
+
+            # Check if we got a PDF
+            content_type = response.headers.get('content-type', '')
+            if 'pdf' in content_type.lower() or response.content.startswith(b'%PDF'):
+                with open(output_path, 'wb') as f:
+                    f.write(response.content)
+                logger.info(f"Downloaded PDF via ScraperAPI: {len(response.content)} bytes")
+                return True
+            else:
+                # ScraperAPI returned the HTML page, try to find PDF link
+                logger.info("ScraperAPI returned HTML, looking for PDF link...")
+
+                # For SSRN, construct the delivery URL
+                import re
+                abstract_match = re.search(r'abstract_id=(\d+)', url)
+                if abstract_match and "ssrn.com" in url:
+                    abstract_id = abstract_match.group(1)
+                    delivery_url = f"https://papers.ssrn.com/sol3/Delivery.cfm/{abstract_id}.pdf?abstractid={abstract_id}&mirid=1"
+
+                    # Try to download the PDF directly via ScraperAPI
+                    pdf_proxy_url = f"https://api.scraperapi.com?api_key={api_key}&url={delivery_url}"
+                    pdf_response = await client.get(pdf_proxy_url)
+
+                    if pdf_response.content.startswith(b'%PDF'):
+                        with open(output_path, 'wb') as f:
+                            f.write(pdf_response.content)
+                        logger.info(f"Downloaded SSRN PDF via ScraperAPI: {len(pdf_response.content)} bytes")
+                        return True
+
+                logger.warning("ScraperAPI did not return a PDF")
+                return False
+
+    except Exception as e:
+        logger.error(f"ScraperAPI download failed: {e}")
+        return False
 
 
 async def parse_arxiv_id(url: str) -> Optional[str]:
@@ -250,9 +339,275 @@ async def find_pdf_with_scrapegraph(page_url: str, api_key: str) -> Optional[str
         return None
 
 
+async def download_pdf_with_undetected_chrome(url: str, output_path: Path) -> bool:
+    """
+    Download PDF using undetected-chromedriver to bypass Cloudflare.
+
+    This is specifically for sites with aggressive bot protection.
+    """
+    import asyncio
+
+    def _download_sync():
+        try:
+            import undetected_chromedriver as uc
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            import time
+
+            logger.info(f"Using undetected Chrome for: {url}")
+
+            options = uc.ChromeOptions()
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+
+            # Set download directory
+            download_dir = str(output_path.parent)
+            prefs = {
+                "download.default_directory": download_dir,
+                "download.prompt_for_download": False,
+                "plugins.always_open_pdf_externally": True,
+            }
+            options.add_experimental_option("prefs", prefs)
+
+            driver = uc.Chrome(options=options, headless=False)
+
+            try:
+                driver.get(url)
+
+                # Wait for Cloudflare to resolve (up to 30 seconds)
+                for i in range(30):
+                    if "Just a moment" not in driver.title:
+                        break
+                    logger.info(f"Waiting for Cloudflare... ({i+1}s)")
+                    time.sleep(1)
+
+                logger.info(f"Page title: {driver.title}")
+
+                # Check if it's an SSRN abstract page
+                if "ssrn.com" in url and "abstract_id=" in url:
+                    # Extract abstract ID
+                    import re
+                    match = re.search(r'abstract_id=(\d+)', url)
+                    if match:
+                        abstract_id = match.group(1)
+                        # Navigate to delivery URL
+                        delivery_url = f"https://papers.ssrn.com/sol3/Delivery.cfm/{abstract_id}.pdf?abstractid={abstract_id}&mirid=1"
+                        logger.info(f"Navigating to delivery URL: {delivery_url}")
+                        driver.get(delivery_url)
+
+                        # Wait for download to complete
+                        time.sleep(5)
+
+                        # Check if PDF was downloaded
+                        pdf_file = output_path.parent / f"{abstract_id}.pdf"
+                        if pdf_file.exists():
+                            pdf_file.rename(output_path)
+                            logger.info(f"Downloaded PDF: {output_path}")
+                            return True
+
+                        # Also check for paper.pdf
+                        for f in output_path.parent.iterdir():
+                            if f.suffix == ".pdf":
+                                f.rename(output_path)
+                                logger.info(f"Downloaded PDF (renamed): {output_path}")
+                                return True
+
+                return False
+
+            finally:
+                driver.quit()
+
+        except Exception as e:
+            logger.error(f"Undetected Chrome download failed: {e}")
+            return False
+
+    # Run sync code in thread pool
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _download_sync)
+
+
+async def download_pdf_with_browser(url: str, output_path: Path) -> bool:
+    """
+    Download PDF using Playwright browser automation.
+
+    This handles sites that block bots, require JavaScript,
+    or have Cloudflare protection.
+
+    Args:
+        url: PDF URL or page URL
+        output_path: Where to save the PDF
+
+    Returns:
+        True if successful
+    """
+    try:
+        from playwright.async_api import async_playwright
+
+        logger.info(f"Attempting browser-based download for: {url}")
+
+        async with async_playwright() as p:
+            # Use non-headless mode to bypass Cloudflare detection
+            browser = await p.chromium.launch(
+                headless=False,  # Cloudflare detects headless browsers
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                ]
+            )
+
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+                accept_downloads=True,
+                viewport={"width": 1920, "height": 1080},
+            )
+            page = await context.new_page()
+
+            # Check if it's an SSRN URL - need special handling
+            is_ssrn = "ssrn.com" in url
+
+            if is_ssrn and "abstract_id=" in url:
+                # Navigate to the abstract page first
+                logger.info("Detected SSRN abstract page, will click download button")
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+                # Wait for Cloudflare challenge to resolve - check for actual content
+                max_wait = 30  # seconds
+                for i in range(max_wait):
+                    title = await page.title()
+                    if "Just a moment" not in title and "Cloudflare" not in title:
+                        break
+                    logger.info(f"Waiting for Cloudflare challenge... ({i+1}s)")
+                    await page.wait_for_timeout(1000)
+
+                # Log current URL and page title for debugging
+                current_url = page.url
+                title = await page.title()
+                logger.info(f"Page loaded: {title} at {current_url}")
+
+                # Try to find and click the download/PDF button
+                download_selectors = [
+                    'a[href*="Delivery.cfm"]',
+                    'a:has-text("Download")',
+                    'a:has-text("PDF")',
+                    'button:has-text("Download")',
+                    '.download-button',
+                    '[data-abstract-id] a',
+                ]
+
+                clicked = False
+                for selector in download_selectors:
+                    try:
+                        element = await page.query_selector(selector)
+                        if element:
+                            # Start waiting for download before clicking
+                            async with page.expect_download(timeout=60000) as download_info:
+                                await element.click()
+                            download = await download_info.value
+                            await download.save_as(output_path)
+                            clicked = True
+                            logger.info(f"Clicked download button with selector: {selector}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Selector {selector} failed: {e}")
+                        continue
+
+                if not clicked:
+                    # Try extracting the PDF URL from page and navigating directly
+                    pdf_links = await page.query_selector_all('a[href*=".pdf"], a[href*="Delivery.cfm"]')
+                    for link in pdf_links:
+                        href = await link.get_attribute("href")
+                        if href:
+                            logger.info(f"Found PDF link: {href}")
+                            if not href.startswith("http"):
+                                href = f"https://papers.ssrn.com{href}"
+                            async with page.expect_download(timeout=60000) as download_info:
+                                await page.goto(href)
+                            download = await download_info.value
+                            await download.save_as(output_path)
+                            clicked = True
+                            break
+
+                if not clicked:
+                    # If Cloudflare is still showing, we can't proceed
+                    title = await page.title()
+                    if "Just a moment" in title:
+                        logger.warning("Cloudflare challenge not resolved - may need manual intervention")
+                        await browser.close()
+                        return False
+
+                    # Try to construct and navigate to PDF URL directly within the browser session
+                    # Extract abstract ID and try delivery URL
+                    import re
+                    abstract_match = re.search(r'abstract_id=(\d+)', url)
+                    if abstract_match:
+                        abstract_id = abstract_match.group(1)
+                        delivery_url = f"https://papers.ssrn.com/sol3/Delivery.cfm/{abstract_id}.pdf?abstractid={abstract_id}&mirid=1"
+                        logger.info(f"Trying direct delivery URL: {delivery_url}")
+
+                        try:
+                            async with page.expect_download(timeout=60000) as download_info:
+                                await page.goto(delivery_url)
+                            download = await download_info.value
+                            await download.save_as(output_path)
+                            clicked = True
+                        except Exception as e:
+                            logger.warning(f"Direct delivery URL failed: {e}")
+
+                if not clicked:
+                    logger.warning("Could not find download button on SSRN page")
+                    await browser.close()
+                    return False
+            else:
+                # Direct PDF URL or other site - try direct navigation with download handling
+                try:
+                    async with page.expect_download(timeout=60000) as download_info:
+                        await page.goto(url, wait_until="commit", timeout=60000)
+                    download = await download_info.value
+                    await download.save_as(output_path)
+                except Exception:
+                    # If no download triggered, page might have loaded - check for PDF content
+                    # or look for download links
+                    logger.info("No automatic download, looking for PDF links on page")
+                    await page.wait_for_timeout(2000)
+
+                    pdf_links = await page.query_selector_all('a[href*=".pdf"]')
+                    for link in pdf_links:
+                        href = await link.get_attribute("href")
+                        if href:
+                            try:
+                                async with page.expect_download(timeout=30000) as download_info:
+                                    await link.click()
+                                download = await download_info.value
+                                await download.save_as(output_path)
+                                break
+                            except Exception:
+                                continue
+                    else:
+                        await browser.close()
+                        return False
+
+            await browser.close()
+
+            # Verify it's a PDF
+            if output_path.exists():
+                with open(output_path, 'rb') as f:
+                    if f.read(4) == b'%PDF':
+                        logger.info(f"Browser downloaded PDF successfully: {output_path.stat().st_size} bytes")
+                        return True
+                    else:
+                        logger.warning("Downloaded file is not a PDF")
+                        return False
+            return False
+
+    except Exception as e:
+        logger.error(f"Browser-based download failed: {e}")
+        return False
+
+
 async def download_pdf(url: str, output_path: Path, scrapegraph_api_key: Optional[str] = None) -> bool:
     """
-    Download PDF from URL with ScrapeGraphAI fallback.
+    Download PDF from URL with browser fallback.
 
     Args:
         url: PDF URL or page URL
@@ -262,48 +617,76 @@ async def download_pdf(url: str, output_path: Path, scrapegraph_api_key: Optiona
     Returns:
         True if successful
     """
+    # Extract domain for cookie lookup
+    from urllib.parse import urlparse
+    domain = urlparse(url).netloc
+
+    # First try simple httpx download with stored cookies
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            response = await client.get(url, timeout=60.0)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        }
+
+        # Load any stored cookies for this domain
+        stored_cookies = load_cookies(domain)
+        cookies = httpx.Cookies()
+        for name, value in stored_cookies.items():
+            cookies.set(name, value, domain=domain)
+
+        if stored_cookies:
+            logger.info(f"Using stored cookies for {domain}: {list(stored_cookies.keys())}")
+
+        async with httpx.AsyncClient(follow_redirects=True, cookies=cookies) as client:
+            response = await client.get(url, headers=headers, timeout=60.0)
             response.raise_for_status()
 
             # Verify it's a PDF
             content_type = response.headers.get('content-type', '')
-            if 'pdf' not in content_type.lower():
-                # Check magic bytes
-                if not response.content.startswith(b'%PDF'):
-                    logger.warning(f"URL does not appear to be a PDF: {content_type}")
-
-                    # Try ScrapeGraphAI fallback if API key provided
-                    if scrapegraph_api_key:
-                        logger.info("Attempting ScrapeGraphAI fallback to find PDF...")
-                        pdf_url = await find_pdf_with_scrapegraph(url, scrapegraph_api_key)
-
-                        if pdf_url:
-                            # Try downloading the found PDF URL
-                            return await download_pdf(pdf_url, output_path, None)  # Don't recurse fallback
-
-                    return False
-
-            with open(output_path, 'wb') as f:
-                f.write(response.content)
-
-            logger.info(f"Downloaded PDF: {len(response.content)} bytes")
-            return True
+            if 'pdf' in content_type.lower() or response.content.startswith(b'%PDF'):
+                with open(output_path, 'wb') as f:
+                    f.write(response.content)
+                logger.info(f"Downloaded PDF: {len(response.content)} bytes")
+                return True
+            else:
+                logger.warning(f"URL does not appear to be a PDF: {content_type}")
 
     except Exception as e:
-        logger.error(f"Failed to download PDF: {e}")
+        logger.error(f"Simple download failed: {e}")
 
-        # Try ScrapeGraphAI fallback if API key provided and not already tried
-        if scrapegraph_api_key and not url.endswith('.pdf'):
-            logger.info("Attempting ScrapeGraphAI fallback after download failure...")
-            pdf_url = await find_pdf_with_scrapegraph(url, scrapegraph_api_key)
+    # Try ScraperAPI for Cloudflare-protected sites (most reliable)
+    logger.info("Attempting ScraperAPI fallback...")
+    if await download_pdf_with_scraperapi(url, output_path):
+        return True
 
-            if pdf_url:
-                # Try downloading the found PDF URL
-                return await download_pdf(pdf_url, output_path, None)  # Don't recurse fallback
+    # Try browser-based download as fallback
+    logger.info("Attempting browser-based download fallback...")
+    if await download_pdf_with_browser(url, output_path):
+        return True
 
-        return False
+    # Try ScrapeGraphAI to find PDF link as last resort
+    if scrapegraph_api_key:
+        logger.info("Attempting ScrapeGraphAI fallback to find PDF...")
+        pdf_url = await find_pdf_with_scrapegraph(url, scrapegraph_api_key)
+
+        if pdf_url and pdf_url != url:
+            # Try downloading the found PDF URL (without recursing fallbacks)
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+                }
+                async with httpx.AsyncClient(follow_redirects=True) as client:
+                    response = await client.get(pdf_url, headers=headers, timeout=60.0)
+                    response.raise_for_status()
+
+                    if response.content.startswith(b'%PDF'):
+                        with open(output_path, 'wb') as f:
+                            f.write(response.content)
+                        logger.info(f"Downloaded PDF via ScrapeGraphAI: {len(response.content)} bytes")
+                        return True
+            except Exception as e:
+                logger.error(f"ScrapeGraphAI URL download failed: {e}")
+
+    return False
 
 
 async def import_paper_from_url(

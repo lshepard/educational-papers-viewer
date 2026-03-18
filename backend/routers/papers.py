@@ -4,7 +4,7 @@ Papers router - handles paper extraction, batch processing, and import.
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,17 @@ class BatchExtractionResponse(BaseModel):
 
 class ImportPaperRequest(BaseModel):
     url: str  # Can be arXiv URL, PDF URL, or paper landing page
+    cookies: Optional[dict] = None  # Optional cookies for Cloudflare-protected sites
+
+
+class SetCookiesRequest(BaseModel):
+    domain: str  # e.g., "papers.ssrn.com"
+    cookies: dict  # e.g., {"cf_clearance": "..."}
+
+
+class SetCookiesResponse(BaseModel):
+    success: bool
+    message: str
 
 
 class ImportPaperResponse(BaseModel):
@@ -127,6 +138,125 @@ async def import_paper(
 
     except Exception as e:
         logger.error(f"Paper import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload", response_model=ImportPaperResponse)
+async def upload_paper(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    source_url: Optional[str] = Form(None),
+    supabase = Depends(get_supabase)
+):
+    """
+    Upload a PDF file directly.
+
+    Use this when automatic download fails (e.g., Cloudflare-protected sites).
+    Download the PDF in your browser, then upload it here.
+    """
+    try:
+        import tempfile
+        from pathlib import Path
+        from lib.paper_import import extract_pdf_metadata
+        from lib.pdf_analyzer import create_paper_slug
+
+        # Verify it's a PDF
+        content = await file.read()
+        if not content.startswith(b'%PDF'):
+            raise HTTPException(status_code=400, detail="File is not a valid PDF")
+
+        # Save to temp file for metadata extraction
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            # Extract metadata from PDF
+            metadata = await extract_pdf_metadata(tmp_path)
+
+            # Use provided title or extract from PDF
+            paper_title = title or metadata.get("title") or file.filename or "Uploaded Paper"
+
+            # Generate slug for storage
+            slug = create_paper_slug(paper_title)
+            storage_path = f"{slug}/paper.pdf"
+
+            # Upload to Supabase storage
+            supabase.storage.from_("papers").upload(
+                path=storage_path,
+                file=content,
+                file_options={
+                    "content-type": "application/pdf",
+                    "upsert": "true"
+                }
+            )
+
+            logger.info(f"Uploaded PDF to storage: {storage_path}")
+
+            # Create database record
+            paper_data = {
+                "title": paper_title,
+                "authors": metadata.get("authors"),
+                "year": metadata.get("year"),
+                "source_url": source_url,
+                "file_kind": "pdf",
+                "storage_bucket": "papers",
+                "storage_path": storage_path,
+                "processing_status": "pending"
+            }
+
+            response = supabase.table("papers").insert(paper_data).execute()
+            paper = response.data[0]
+
+            logger.info(f"Created paper record: {paper['id']}")
+
+            return ImportPaperResponse(
+                success=True,
+                paper_id=paper["id"],
+                message=f"Paper '{paper_title}' uploaded successfully"
+            )
+
+        finally:
+            # Cleanup temp file
+            Path(tmp_path).unlink(missing_ok=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Paper upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cookies", response_model=SetCookiesResponse)
+async def set_cookies(request: SetCookiesRequest):
+    """
+    Save cookies for a domain to help bypass Cloudflare protection.
+
+    Use this to save cookies from your browser session:
+    1. Open the paper page in your browser
+    2. Open DevTools > Application > Cookies
+    3. Copy cf_clearance and other cookies
+    4. Send them here
+
+    Example:
+    {
+        "domain": "papers.ssrn.com",
+        "cookies": {
+            "cf_clearance": "your_cookie_value",
+            "__cf_bm": "another_value"
+        }
+    }
+    """
+    try:
+        from lib.paper_import import save_cookies
+        save_cookies(request.domain, request.cookies)
+        logger.info(f"Saved cookies for {request.domain}: {list(request.cookies.keys())}")
+        return SetCookiesResponse(
+            success=True,
+            message=f"Saved {len(request.cookies)} cookies for {request.domain}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to save cookies: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

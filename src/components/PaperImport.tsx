@@ -12,6 +12,13 @@ const PaperImport: React.FC = () => {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // PDF upload state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadSourceUrl, setUploadSourceUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
   React.useEffect(() => {
     if (!authLoading && !user) {
       navigate('/admin/login');
@@ -51,6 +58,68 @@ const PaperImport: React.FC = () => {
       setError(err.message || 'Import failed');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        setError('Please select a PDF file');
+        return;
+      }
+      setUploadFile(file);
+      setError(null);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      setError('Please select a PDF file');
+      return;
+    }
+    if (!uploadSourceUrl.trim()) {
+      setError('Please enter the source URL');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      if (uploadTitle.trim()) {
+        formData.append('title', uploadTitle.trim());
+      }
+      if (uploadSourceUrl.trim()) {
+        formData.append('source_url', uploadSourceUrl.trim());
+      }
+
+      const response = await fetch(`${config.backendUrl}/papers/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setResult(data);
+        setUploadFile(null);
+        setUploadTitle('');
+        setUploadSourceUrl('');
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else {
+        setError(data.detail || 'Upload failed');
+      }
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      setError(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -169,6 +238,63 @@ const PaperImport: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
+
+      <div className="import-form upload-section">
+        <h2>Or Upload PDF Directly</h2>
+        <p className="description">
+          For sites with download restrictions (like SSRN), download the PDF in your browser
+          and upload it here.
+        </p>
+
+        <div className="form-section">
+          <label>
+            PDF File *
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={handleFileChange}
+              disabled={uploading}
+              className="file-input"
+            />
+          </label>
+          {uploadFile && (
+            <div className="file-selected">
+              Selected: {uploadFile.name} ({(uploadFile.size / 1024 / 1024).toFixed(2)} MB)
+            </div>
+          )}
+
+          <label>
+            Title (optional)
+            <input
+              type="text"
+              value={uploadTitle}
+              onChange={(e) => setUploadTitle(e.target.value)}
+              placeholder="Paper title (extracted from PDF if not provided)"
+              disabled={uploading}
+            />
+          </label>
+
+          <label>
+            Source URL *
+            <input
+              type="text"
+              value={uploadSourceUrl}
+              onChange={(e) => setUploadSourceUrl(e.target.value)}
+              placeholder="https://papers.ssrn.com/..."
+              disabled={uploading}
+            />
+          </label>
+
+          <button
+            onClick={handleUpload}
+            disabled={uploading || !uploadFile || !uploadSourceUrl.trim()}
+            className="import-btn upload-btn"
+          >
+            {uploading ? 'Uploading...' : 'Upload PDF'}
+          </button>
+        </div>
       </div>
 
       <div className="examples-section">
@@ -433,6 +559,43 @@ const PaperImport: React.FC = () => {
           justify-content: center;
           align-items: center;
           min-height: 100vh;
+        }
+
+        .upload-section {
+          border-top: 3px solid #e2e8f0;
+        }
+
+        .upload-section h2 {
+          color: #4a5568;
+        }
+
+        .file-input {
+          padding: 10px;
+          border: 2px dashed #cbd5e0;
+          border-radius: 6px;
+          background: #f7fafc;
+          cursor: pointer;
+        }
+
+        .file-input:hover {
+          border-color: #4299e1;
+          background: #ebf8ff;
+        }
+
+        .file-selected {
+          padding: 8px 12px;
+          background: #e6fffa;
+          border-radius: 4px;
+          color: #234e52;
+          font-size: 14px;
+        }
+
+        .upload-btn {
+          background: #38a169;
+        }
+
+        .upload-btn:hover:not(:disabled) {
+          background: #2f855a;
         }
       `}</style>
     </div>

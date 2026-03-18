@@ -15,6 +15,7 @@ dependencies = [
     "supabase>=2.11.0",
     # AI/ML
     "google-genai>=0.4.0",
+    "anthropic>=0.40.0",
     # Research APIs
     "semanticscholar>=0.9.0",
     "perplexipy>=1.1.1",
@@ -34,6 +35,8 @@ dependencies = [
     # Web scraping
     "beautifulsoup4>=4.12.0",
     "lxml>=5.0.0",
+    # Browser automation (fallback for sites that block bots)
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]
